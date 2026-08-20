@@ -1,0 +1,66 @@
+name: Release
+
+# Trigger on every push of a tag that starts with "v" (e.g. v0.1.0, v1.2.3).
+# The workflow builds the self-contained single-file Windows binary and creates
+# a GitHub Release with it as an asset.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# The release job needs to write release artifacts and (optionally) mark the
+# release as the latest. Both are contents:write actions.
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build + Publish
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore HSA.sln
+
+      - name: Build (Release)
+        run: dotnet build HSA.sln -c Release --no-restore
+
+      - name: Publish self-contained single-file binary
+        shell: pwsh
+        run: |
+          dotnet publish src/HSA/HSA.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -o publish
+
+      - name: Verify binary exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish/HSA.exe")) {
+              Write-Error "publish/HSA.exe was not produced"
+              exit 1
+          }
+          $size = (Get-Item "publish/HSA.exe").Length
+          Write-Output "Built publish/HSA.exe ($([math]::Round($size/1MB,2)) MB)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            publish/HSA.exe
+            publish/HSA.pdb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
