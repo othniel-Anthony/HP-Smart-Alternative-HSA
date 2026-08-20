@@ -8,49 +8,6 @@
              mc:Ignorable="d">
 
     <UserControl.Resources>
-        <!--
-            M3 switch. Reuses theme brushes (SurfaceContainerHighest, Outline, Primary,
-            OnPrimary) so it looks correct in both light and dark themes. The thumb
-            slides between left and right; the track fills with Primary when checked.
-        -->
-        <Style x:Key="M3Switch" TargetType="CheckBox">
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="CheckBox">
-                        <Grid>
-                            <Border x:Name="Track" Width="52" Height="32" CornerRadius="16"
-                                    Background="{StaticResource SurfaceContainerHighestBrush}"
-                                    BorderBrush="{StaticResource OutlineBrush}"
-                                    BorderThickness="2"
-                                    VerticalAlignment="Center">
-                                <Ellipse x:Name="Thumb" Width="16" Height="16"
-                                         Fill="{StaticResource OutlineBrush}"
-                                         HorizontalAlignment="Left"
-                                         Margin="8,0,0,0"/>
-                            </Border>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryBrush}"/>
-                                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
-                                <Setter TargetName="Thumb" Property="Fill" Value="{StaticResource OnPrimaryBrush}"/>
-                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
-                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,8,0"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Track" Property="Opacity" Value="0.92"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Track" Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <Style x:Key="SettingRowBorder" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource SurfaceContainerLowBrush}"/>
             <Setter Property="CornerRadius" Value="12"/>

@@ -421,21 +421,175 @@
             </Setter.Value>
         </Setter>
     </Style>
-
-    <!-- ===== CheckBox (M3 â€” square with rounded corners, primary check) ===== -->
+    <!-- ===== CheckBox (M3 — square with rounded corners, primary fill) ===== -->
+    <!-- Replaces the default WPF checkbox everywhere. Uses a Path geometry for the
+         checkmark so it stays crisp at any DPI. -->
     <Style TargetType="CheckBox">
         <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
         <Setter Property="FontSize" Value="{StaticResource BodyMediumSize}"/>
         <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Margin" Value="0,4"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="Box" Grid.Column="0"
+                                Width="18" Height="18" CornerRadius="4"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource OutlineBrush}"
+                                BorderThickness="2"
+                                VerticalAlignment="Center">
+                            <Path x:Name="Check" Width="12" Height="12"
+                                  Data="M 1,6 L 5,10 L 11,2"
+                                  Stroke="{StaticResource OnPrimaryBrush}"
+                                  StrokeThickness="2.4"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Visibility="Collapsed"/>
+                        </Border>
+                        <ContentPresenter Grid.Column="1" Margin="10,0,0,0"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource PrimaryStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== ToggleButton (M3 filter chip — pill, secondary container when checked) ===== -->
+    <!-- Default-styled so a bare <ToggleButton/> in any view gets the M3 chip look. -->
+    <Style TargetType="ToggleButton">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource OutlineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="14,6"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Bd" CornerRadius="10"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource OnSurfaceStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SecondaryContainerBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource SecondaryContainerBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource OnSecondaryContainerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== M3Switch (keyed; applied with Style="{StaticResource M3Switch}") ===== -->
+    <Style x:Key="M3Switch" TargetType="CheckBox">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid>
+                        <Border x:Name="Track" Width="52" Height="32" CornerRadius="16"
+                                Background="{StaticResource SurfaceContainerHighestBrush}"
+                                BorderBrush="{StaticResource OutlineBrush}"
+                                BorderThickness="2"
+                                VerticalAlignment="Center">
+                            <Ellipse x:Name="Thumb" Width="16" Height="16"
+                                     Fill="{StaticResource OutlineBrush}"
+                                     HorizontalAlignment="Left"
+                                     Margin="8,0,0,0"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter TargetName="Thumb" Property="Fill" Value="{StaticResource OnPrimaryBrush}"/>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                            <Setter TargetName="Thumb" Property="Margin" Value="0,0,8,0"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.92"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ===== TabItem (M3 secondary nav â€” pill on selection) ===== -->
+    <!-- ===== TabControl (M3 nav; TabPanel wrapped in a horizontal ScrollViewer so
+         tabs can never overflow off-screen on narrow windows) ===== -->
     <Style TargetType="TabControl">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Padding" Value="0,0,0,8"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <ScrollViewer Grid.Row="0"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled"
+                                      Padding="{TemplateBinding Padding}">
+                            <TabPanel x:Name="HeaderPanel"
+                                      Panel.ZIndex="1"
+                                      IsItemsHost="True"
+                                      KeyboardNavigation.TabIndex="1"/>
+                        </ScrollViewer>
+                        <Border Grid.Row="1"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style TargetType="TabItem">
         <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>

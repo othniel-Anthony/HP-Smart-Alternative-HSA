@@ -13,6 +13,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.3] - 2026-08-20
+
+### Changed — Modern controls (theme-wide)
+- The default `CheckBox` style is now a Material 3 square (18×18, rounded 4, surface
+  fill, primary fill when checked, white check path). Affects every checkbox in the
+  app (HP-only filter, Supplies/Drivers/Printers/Settings) automatically.
+- The default `ToggleButton` style is now a Material 3 filter chip (pill background,
+  secondary-container fill when checked). Replaces the old Windows toggle used by
+  the Supplies filter chips.
+- `M3Switch` (used by the Settings dark-mode toggle) is now defined in both theme
+  files instead of inline in `SettingsView.xaml` — same look, single source of truth.
+- `TabControl` template now wraps the `TabPanel` in a horizontal `ScrollViewer` so
+  the 5 tabs can never overflow off-screen on narrow windows.
+- Bump to 0.1.3.
+
+---
+
 ## [0.1.2] - 2026-08-20
 
 ### Added — Supplies chips in the Printers list
