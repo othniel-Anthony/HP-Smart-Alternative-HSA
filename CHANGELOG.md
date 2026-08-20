@@ -10,6 +10,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - PWG 5100.11 IPP System Services firmware push (where supported by the printer)
 - Windows Update catalog integration for automatic driver fetch
 - Network printer auto-discovery (mDNS / WS-Discovery)
+
+---
+
+## [0.1.1] - 2026-08-20
+
+### Added — Ink & toner management (new "Supplies" tab)
+- `IConsumableService` reads each network HP printer's `prtMarkerSuppliesTable` (RFC 3805 Printer MIB) via SNMP
+- Parses description, class, color, max capacity, level, and part number (regex over the description: e.g. `HP CF258A` → `CF258A`)
+- Cross-references `prtMarkerColorantTable` for color names; falls back to description-text heuristics
+- Computes a rolled-up health status (OK / Low / Replace soon / Replace now / Empty) with Material You thresholds
+- New `Supplies` tab in the UI with:
+  - Card list per consumable: printer name, description, part number, color, level % with a horizontal progress bar, color-coded health pill
+  - Filter chips: All / Low or below / Replace
+  - Per-printer refresh with progress percent
+  - Network HP printers only (USB-only printers don't expose SNMP)
+
+### Added — Model-specific printer icons
+- New `IModelImageService` resolves an icon for each printer with this priority:
+  1. Exact match in `Resources/printers/<normalized-model>.png`
+  2. Family keyword match (LaserJet mono/color, OfficeJet, ENVY, Smart Tank, Neverstop, PageWide, DeskJet, DesignJet)
+  3. Generic HP icon
+- Six procedural family icons shipped in `Resources/printers/`
+- `Generate-PrinterIcons.ps1` regenerates the procedural set (no real product images bundled)
+- Printers list now shows a 48×48 rounded icon + a model-family subtitle (e.g. "LaserJet Pro (color)")
+- Adding a real product photo is a 1-step process: drop `<normalized-model>.png` into `Resources/printers/`
+
+### Added — Supporting infrastructure
+- `SnmpClient.WalkTableAsync` for enumerating RFC 3805 tables
+- `Converters/Converters.cs`: `IntEqualsConverter`, `CountToVisibilityConverter`, `PercentToWidthConverter`
+- `ConsumableStatus` model with `ConsumableClass` and `ConsumableHealth` enums
+
+### Changed
+- Tab order updated: Printers, **Supplies**, Drivers, Firmware
+- `PrinterInfo` model gains settable `ModelImageUri` and `ModelFamily` (with `INotifyPropertyChanged`)
+
+---
+
+## [0.1.0] - 2026-08-19
+
+### First public release.
 - Consume ink / toner level display
 - Localization (Spanish, French to start)
 - Code signing certificate for unattended installs
