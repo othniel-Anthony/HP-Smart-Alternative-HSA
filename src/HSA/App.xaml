@@ -2,10 +2,15 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnMainWindowClose">
+    <!--
+        The active theme dictionary (Themes/AppTheme.xaml or Themes/AppTheme.Dark.xaml)
+        is installed by App.OnStartup before MainWindow is created, based on the user's
+        persisted SettingsService.ThemeMode. See App.xaml.cs.
+    -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/AppTheme.xaml" />
+                <!-- Intentionally empty: theme is injected at startup. -->
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

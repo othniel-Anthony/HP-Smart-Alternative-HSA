@@ -58,8 +58,13 @@
                            Style="{StaticResource BodyMediumText}" Foreground="{StaticResource OnSurfaceVariantBrush}"/>
 
                 <!-- Trailing actions -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
-                    <Button Style="{StaticResource M3TextButton}" Content="About" Click="OnAboutClicked"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
+                    <TextBlock Text="v" Style="{StaticResource BodySmallText}"
+                               Foreground="{StaticResource OnSurfaceVariantBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="VersionText" Style="{StaticResource BodySmallText}"
+                               Foreground="{StaticResource OnSurfaceVariantBrush}"
+                               VerticalAlignment="Center" Margin="2,0,0,0"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -78,6 +83,9 @@
                 </TabItem>
                 <TabItem Header="Firmware">
                     <views:FirmwareView />
+                </TabItem>
+                <TabItem Header="Settings">
+                    <views:SettingsView />
                 </TabItem>
             </TabControl>
         </Grid>

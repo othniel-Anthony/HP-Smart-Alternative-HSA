@@ -7,9 +7,11 @@ obj/
 /HSA.exe
 /HSA.exe.config
 /HSA.cmd
+/HSA.exe.old
 /brand-shot.png
 /publish/
 /*publish*/
+/shots/
 *.trash/
 .trash/
 

@@ -46,6 +46,16 @@ public sealed class PrinterInfo : INotifyPropertyChanged
         set { if (_modelFamily != value) { _modelFamily = value; OnPropertyChanged(); } }
     }
 
+    // ---- Background-loaded by PrintersViewModel after a refresh ----
+    // Set by a per-printer background task once SNMP consumable data arrives.
+    // Empty until then; the UI hides the chip row when the list is empty.
+    private IReadOnlyList<ConsumableStatus> _consumables = Array.Empty<ConsumableStatus>();
+    public IReadOnlyList<ConsumableStatus> Consumables
+    {
+        get => _consumables;
+        set { if (!ReferenceEquals(_consumables, value)) { _consumables = value ?? Array.Empty<ConsumableStatus>(); OnPropertyChanged(); } }
+    }
+
     // ---- Read-only after construction ----
 
     // Firmware (when known)

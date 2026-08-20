@@ -116,11 +116,23 @@ public partial class App : Application
         sc.AddSingleton<IFirmwareService, FirmwareService>();
         sc.AddSingleton<IConsumableService, ConsumableService>();
         sc.AddSingleton<IModelImageService, ModelImageService>();
+
+        // Settings + theme. SettingsService is constructed here (not via DI) so we can
+        // read the persisted theme synchronously and install the right theme dictionary
+        // BEFORE the first view is created. ThemeManager subscribes to SettingsService.Changed
+        // and re-applies the dictionary on toggle.
+        var settings = new SettingsService();
+        var theme = new ThemeManager(settings);
+        theme.Apply(settings.Current.ThemeMode);
+        sc.AddSingleton(settings);
+        sc.AddSingleton(theme);
+
         sc.AddSingleton<MainViewModel>();
         sc.AddSingleton<PrintersViewModel>();
         sc.AddSingleton<SuppliesViewModel>();
         sc.AddSingleton<DriversViewModel>();
         sc.AddSingleton<FirmwareViewModel>();
+        sc.AddSingleton<SettingsViewModel>();
         _services = sc.BuildServiceProvider();
 
         // --- Show main window ---
@@ -129,7 +141,7 @@ public partial class App : Application
             DataContext = _services.GetRequiredService<MainViewModel>()
         };
         main.Show();
-        Log.Information("Main window shown.");
+        Log.Information("Main window shown (theme={Theme}).", theme.CurrentMode);
     }
 
     /// <summary>

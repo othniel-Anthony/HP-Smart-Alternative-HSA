@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.Reflection;
+using System.Windows;
 
 namespace HSA;
 
@@ -7,18 +8,19 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Show the running app version in the top app bar. About content lives in
+        // the Settings tab now.
+        VersionText.Text = ReadVersion();
     }
 
-    private void OnAboutClicked(object sender, RoutedEventArgs e)
+    private static string ReadVersion()
     {
-        MessageBox.Show(
-            "HSA  •  v0.1.0\n\n" +
-            "Built by Circuit & Ink as a no-nonsense replacement for HP Smart / the HP App.\n\n" +
-            "Manages printers, drivers, and firmware directly through the Windows print spooler, " +
-            "WMI, and (for network printers) SNMP / IPP.\n\n" +
-            "Logs: %LOCALAPPDATA%\\HSA\\Logs",
-            "About",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        var info = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (string.IsNullOrEmpty(info)) return "0.0.0";
+        // .NET 8 SDK appends "+<git-sha>" to InformationalVersion when building from a
+        // git repo. The SHA is noise for the UI; strip everything from "+" onwards.
+        var plus = info.IndexOf('+');
+        return plus > 0 ? info[..plus] : info;
     }
 }

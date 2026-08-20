@@ -13,6 +13,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.2] - 2026-08-20
+
+### Added — Supplies chips in the Printers list
+- Each row in the Printers list now shows a horizontal row of small color-coded
+  chips for ink/toner (K / C / M / Y / etc.) with the level percent. Network HP
+  printers are queried in the background right after a refresh; chips appear as
+  data arrives, the row stays empty for USB-only printers.
+
+### Added — Settings tab + Dark mode
+- New `Settings` tab with two preference rows: Dark mode (Material You dark
+  scheme) and "Start with HP-only filter".
+- Settings are persisted to `%LOCALAPPDATA%\HSA\settings.json` via the new
+  `SettingsService` and re-applied on next launch.
+- The theme dictionary is installed **before** `MainWindow` is created, so the
+  app boots in the right theme with no flash.
+- A new M3 switch control template (`M3Switch`) drives the toggle.
+
+### Added — About content moved into Settings
+- Removed the "About" button from the top app bar. About content (app name,
+  version, description, publisher, build date, repo link) now lives in the
+  Settings tab alongside the local-data paths (settings file, logs, app data).
+- The top app bar now shows the running version (`v0.1.2`) instead.
+
+---
+
 ## [0.1.1] - 2026-08-20
 
 ### Added — Ink & toner management (new "Supplies" tab)

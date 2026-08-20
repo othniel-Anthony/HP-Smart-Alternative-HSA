@@ -12,6 +12,7 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IDriverService _drivers;
     private readonly IFirmwareService _firmware;
     private readonly IModelImageService _modelImages;
+    private readonly IConsumableService _consumables;
     private readonly IDialogService _dialog;
     private readonly ILogger<PrintersViewModel> _log;
 
@@ -54,6 +55,7 @@ public sealed class PrintersViewModel : ObservableObject
         IDriverService drivers,
         IFirmwareService firmware,
         IModelImageService modelImages,
+        IConsumableService consumables,
         IDialogService dialog,
         ILogger<PrintersViewModel> log)
     {
@@ -61,6 +63,7 @@ public sealed class PrintersViewModel : ObservableObject
         _drivers = drivers;
         _firmware = firmware;
         _modelImages = modelImages;
+        _consumables = consumables;
         _dialog = dialog;
         _log = log;
 
@@ -139,6 +142,12 @@ public sealed class PrintersViewModel : ObservableObject
             else
                 await LoadJobsAsync();
             StatusMessage = $"Loaded {filtered.Count} printer(s) — {DateTime.Now:HH:mm:ss}";
+
+            // Fire-and-forget: walk SNMP consumables for each network HP printer in parallel
+            // and update each PrinterInfo's Consumables list as data arrives. Non-network
+            // printers and unparseable IPs are skipped by the service. The list view binds
+            // to PrinterInfo.Consumables and will refresh itself per-row.
+            _ = LoadConsumablesInBackgroundAsync(filtered);
         }
         catch (Exception ex)
         {
@@ -161,6 +170,48 @@ public sealed class PrintersViewModel : ObservableObject
         catch (Exception ex)
         {
             _log.LogError(ex, "Failed to load jobs for {Printer}", SelectedPrinter.Name);
+        }
+    }
+
+    /// <summary>
+    /// For every network HP printer, kick off an SNMP consumable query. Each
+    /// completion assigns the result to <see cref="PrinterInfo.Consumables"/>,
+    /// which raises <see cref="System.ComponentModel.INotifyPropertyChanged.PropertyChanged"/>
+    /// so the row in the printers list re-renders with the new chips.
+    /// </summary>
+    private async Task LoadConsumablesInBackgroundAsync(IList<PrinterInfo> printers)
+    {
+        // Network + HP-targeted. We don't want to spam USB-only devices with SNMP.
+        var targets = printers
+            .Where(p => p.IsNetworkPrinter && !string.IsNullOrEmpty(p.IpAddress))
+            .ToList();
+        if (targets.Count == 0) return;
+
+        try
+        {
+            var tasks = targets.Select(p => QueryOneAsync(p));
+            await Task.WhenAll(tasks);
+        }
+        catch (Exception ex)
+        {
+            // Individual failures are already logged in QueryOneAsync; this catch is
+            // just defense-in-depth in case Task.WhenAll surfaces an unexpected aggregate.
+            _log.LogDebug(ex, "Background consumable load completed with at least one failure.");
+        }
+    }
+
+    private async Task QueryOneAsync(PrinterInfo printer)
+    {
+        try
+        {
+            var items = await _consumables.GetConsumablesAsync(printer, CancellationToken.None);
+            // Set even when empty so the UI clears any stale chip row from a previous
+            // refresh on the same PrinterInfo instance.
+            printer.Consumables = items;
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Consumable fetch failed for {Printer}", printer.Name);
         }
     }
 
