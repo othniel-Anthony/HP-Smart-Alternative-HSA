@@ -136,3 +136,20 @@ public sealed class StringToVisibilityConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>
+/// Bool -> Visibility. True = Visible, False = Collapsed. Optional ConverterParameter
+/// "invert" flips the polarity. Used for progress bars, status overlays, etc.
+/// </summary>
+public sealed class BoolToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var b = value is bool x && x;
+        if (parameter is string s && s.Equals("invert", StringComparison.OrdinalIgnoreCase))
+            b = !b;
+        return b ? Visibility.Visible : Visibility.Collapsed;
+    }
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

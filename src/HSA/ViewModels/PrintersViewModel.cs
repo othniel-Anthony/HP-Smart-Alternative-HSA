@@ -277,7 +277,7 @@ public sealed class PrintersViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            StatusMessage = $"Detecting firmware for {SelectedPrinter.Name}â€¦";
+            StatusMessage = $"Detecting firmware for {SelectedPrinter.Name}…";
             var info = await _firmware.DetectAsync(SelectedPrinter, CancellationToken.None);
             StatusMessage = $"Firmware: {info.CurrentVersionDisplay} ({info.DetectionMethodDisplay})";
             _dialog.ShowInfo("Firmware",
@@ -308,11 +308,11 @@ public sealed class PrintersViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            StatusMessage = "Installing driver INF (will prompt for admin)â€¦";
+            StatusMessage = "Installing driver INF (will prompt for admin)…";
             var result = await _drivers.InstallFromInfAsync(dlg.FileName);
             if (result.Success)
             {
-                StatusMessage = "Driver installed. Rescanning devicesâ€¦";
+                StatusMessage = "Driver installed. Rescanning devices…";
                 _dialog.ShowInfo("Driver installed", "The driver was added to the driver store. A rescan was triggered.");
             }
             else

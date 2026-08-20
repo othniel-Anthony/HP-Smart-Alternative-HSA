@@ -153,7 +153,7 @@
         <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariantBrush}"/>
     </Style>
 
-    <!-- ===== Cards (M3 "elevated" â€” tonal fill, no hard border, soft shadow) ===== -->
+    <!-- ===== Cards (M3 "elevated" — tonal fill, no hard border, soft shadow) ===== -->
     <Style x:Key="M3Card" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource SurfaceContainerBrush}"/>
         <Setter Property="CornerRadius" Value="12"/>
@@ -348,7 +348,7 @@
         </Setter>
     </Style>
 
-    <!-- Destructive FAB / button â€” error container -->
+    <!-- Destructive FAB / button — error container -->
     <Style x:Key="M3FilledButtonError" TargetType="Button" BasedOn="{StaticResource M3FilledButton}">
         <Setter Property="Background" Value="{StaticResource ErrorContainerBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource OnErrorContainerBrush}"/>
@@ -555,7 +555,7 @@
         </Setter>
     </Style>
 
-    <!-- ===== TabItem (M3 secondary nav â€” pill on selection) ===== -->
+    <!-- ===== TabItem (M3 secondary nav — pill on selection) ===== -->
     <!-- ===== TabControl (M3 nav; TabPanel wrapped in a horizontal ScrollViewer so
          tabs can never overflow off-screen on narrow windows) ===== -->
     <Style TargetType="TabControl">
@@ -632,4 +632,33 @@
         <Setter Property="Background" Value="{StaticResource SecondaryContainerBrush}"/>
     </Style>
 
+
+    <!-- ===== M3ProgressBar (keyed; flat 4dp linear bar) ===== -->
+    <!-- Used by long-running operations (driver install / remove) so the user
+         can keep using the rest of the app. Track is a faint surface-container
+         tint; the fill animates with the value. Indeterminate mode shows a
+         shimmering fill that loops. -->
+    <Style x:Key="M3ProgressBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="6"/>
+        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="Background" Value="{StaticResource SurfaceContainerHighBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid>
+                        <Border x:Name="PART_Track"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                SnapsToDevicePixels="True"/>
+                        <Border x:Name="PART_Indicator"
+                                Background="{TemplateBinding Foreground}"
+                                CornerRadius="3"
+                                HorizontalAlignment="Left"
+                                SnapsToDevicePixels="True"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

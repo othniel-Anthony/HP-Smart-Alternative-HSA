@@ -8,6 +8,7 @@ obj/
 /HSA.exe.config
 /HSA.cmd
 /HSA.exe.old
+/HSA.exe.*.bak
 /brand-shot.png
 /publish/
 /*publish*/

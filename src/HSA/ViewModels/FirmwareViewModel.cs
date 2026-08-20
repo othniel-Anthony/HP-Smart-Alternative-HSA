@@ -55,7 +55,7 @@ public sealed class FirmwareViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            StatusMessage = "Loading printersâ€¦";
+            StatusMessage = "Loading printers…";
             var all = await _printers.GetAllAsync();
             var hp = all.Where(p => p.IsHp).ToList();
             Printers.Clear();
@@ -86,7 +86,7 @@ public sealed class FirmwareViewModel : ObservableObject
             foreach (var p in Printers)
             {
                 ct.ThrowIfCancellationRequested();
-                StatusMessage = $"Detecting firmware for {p.Name}â€¦";
+                StatusMessage = $"Detecting firmware for {p.Name}…";
                 await DetectOneAsync(p);
                 done++;
             }

@@ -14,7 +14,7 @@ namespace HSA.Native;
 ///
 /// For v1 we only use the <c>Get-Printer-Attributes</c> operation to read firmware-related
 /// attributes. The binary encoder below is intentionally small and only emits the value tags
-/// we need. Push-firmware (Update operation) is implemented as a v2 feature â€” see
+/// we need. Push-firmware (Update operation) is implemented as a v2 feature — see
 /// <see cref="TryUpdateFirmwareAsync"/>.
 /// </summary>
 public sealed class IppClient
@@ -183,7 +183,7 @@ public sealed class IppClient
     /// <summary>
     /// v2 placeholder. PWG 5100.11 specifies an Update operation in /system (the printer's
     /// System Services URL) that accepts a firmware file URL. The protocol is standardized
-    /// and does NOT bypass any signing â€” printers that accept unsigned firmware do so, others
+    /// and does NOT bypass any signing — printers that accept unsigned firmware do so, others
     /// reject. Wiring this up is a v2 deliverable.
     /// </summary>
     public Task<bool> TryUpdateFirmwareAsync(string printerUri, Uri firmwareFileUri, CancellationToken ct = default)

@@ -27,5 +27,5 @@ public sealed record DriverInfo
     public string Display => string.IsNullOrEmpty(OriginalName)
         ? PublishedName
         : $"{OriginalName}  ({Provider} {DriverVersion})";
-    public string Subtitle => $"{(IsSigned ? "Signed" : "Unsigned")} Â· Class: {ClassName} Â· Published: {PublishedName}";
+    public string Subtitle => $"{(IsSigned ? "Signed" : "Unsigned")} · Class: {ClassName} · Published: {PublishedName}";
 }

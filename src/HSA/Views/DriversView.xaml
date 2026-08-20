@@ -2,10 +2,15 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:HSA.ViewModels"
+             xmlns:cv="clr-namespace:HSA.Converters"
              d:DataContext="{d:DesignInstance Type=vm:DriversViewModel}"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <cv:BoolToVisibilityConverter x:Key="BoolVis"/>
+    </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -23,6 +28,7 @@
         <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource M3Card}">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -43,9 +49,19 @@
                 </Grid>
 
                 <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Style="{StaticResource BodyMediumText}"
-                           Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,0,0,8"/>
+                           Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,0,0,4"/>
+                <!-- Linear progress bar; visible only while a long-running op is active.
+                     Single install uses indeterminate mode (pnputil has no progress);
+                     bulk remove uses determinate mode driven by IProgress<T>. -->
+                <Grid Grid.Row="2" Margin="0,0,0,8"
+                      Visibility="{Binding IsInstalling, Converter={StaticResource BoolVis}}">
+                    <ProgressBar Style="{StaticResource M3ProgressBar}"
+                                 Minimum="0" Maximum="100"
+                                 IsIndeterminate="{Binding InstallIsIndeterminate, Mode=OneWay}"
+                                 Value="{Binding ProgressPercent, Mode=OneWay}"/>
+                </Grid>
 
-                <ListBox Grid.Row="2" Style="{StaticResource M3ListBox}"
+                <ListBox Grid.Row="3" Style="{StaticResource M3ListBox}"
                          ItemContainerStyle="{StaticResource M3ListItem}"
                          ItemsSource="{Binding Drivers}"
                          SelectedItem="{Binding SelectedDriver, Mode=TwoWay}">
@@ -72,7 +88,7 @@
                 <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
                         Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
 
-                <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INFâ€¦"
+                <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INF…"
                         Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
 
                 <TextBlock Text="What this does" Style="{StaticResource TitleSmallText}" Margin="0,0,0,4"/>

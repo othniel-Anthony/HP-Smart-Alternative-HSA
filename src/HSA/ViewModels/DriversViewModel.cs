@@ -30,11 +30,35 @@ public sealed class DriversViewModel : ObservableObject
     public DriverInfo? SelectedDriver { get => _selectedDriver; set => SetField(ref _selectedDriver, value); }
 
     private int _progressDone;
-    public int ProgressDone { get => _progressDone; set { if (SetField(ref _progressDone, value)) OnPropertyChanged(nameof(ProgressPercent)); } }
+    public int ProgressDone { get => _progressDone; set { if (SetField(ref _progressDone, value)) OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(IsProgressing)); } }
     private int _progressTotal;
-    public int ProgressTotal { get => _progressTotal; set { if (SetField(ref _progressTotal, value)) OnPropertyChanged(nameof(ProgressPercent)); } }
+    public int ProgressTotal { get => _progressTotal; set { if (SetField(ref _progressTotal, value)) OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(IsProgressing)); } }
     public int ProgressPercent => ProgressTotal == 0 ? 0 : (int)(100.0 * ProgressDone / ProgressTotal);
     public bool IsProgressing => ProgressTotal > 0 && ProgressDone < ProgressTotal;
+
+    // True while a long-running driver op (single install OR bulk remove) is in flight.
+    // Decoupled from IsBusy so the user can still browse, switch tabs, etc.
+    // We also keep the progress bar visible for a moment after completion so the
+    // user sees the 100% mark.
+    private bool _isInstalling;
+    public bool IsInstalling
+    {
+        get => _isInstalling;
+        private set
+        {
+            if (!SetField(ref _isInstalling, value)) return;
+            OnPropertyChanged(nameof(IsProgressing));
+        }
+    }
+
+    // pnputil /add-driver doesn't report progress, so the bar animates in
+    // indeterminate mode while waiting for the UAC + install + rescan pipeline.
+    private bool _installIsIndeterminate = true;
+    public bool InstallIsIndeterminate
+    {
+        get => _installIsIndeterminate;
+        private set => SetField(ref _installIsIndeterminate, value);
+    }
 
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand RemoveSelectedCommand { get; }
@@ -59,7 +83,7 @@ public sealed class DriversViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            StatusMessage = "Enumerating driver storeâ€¦";
+            StatusMessage = "Enumerating driver store…";
             var all = await _drivers.GetAllAsync(hpOnly: HpOnly);
             if (OnlyInUse) all = all.Where(d => d.UsedByPrinters.Count > 0).ToList();
             Drivers.Clear();
@@ -114,7 +138,8 @@ public sealed class DriversViewModel : ObservableObject
             "You can reinstall them later from Windows Update or an INF.\n\nProceed?",
             "Remove all HP drivers")) return;
 
-        IsBusy = true;
+        IsInstalling = true;
+        InstallIsIndeterminate = false;
         ProgressTotal = Drivers.Count;
         ProgressDone = 0;
         try
@@ -123,7 +148,7 @@ public sealed class DriversViewModel : ObservableObject
             {
                 ProgressDone = p.Done;
                 ProgressTotal = p.Total;
-                StatusMessage = $"Removing {p.Current} ({p.Done + 1}/{p.Total})â€¦";
+                StatusMessage = $"Removing {p.Current} ({p.Done + 1}/{p.Total})…";
             });
             var snapshot = Drivers.ToList();
             var results = await _drivers.RemoveAllHpAsync(progress);
@@ -139,30 +164,70 @@ public sealed class DriversViewModel : ObservableObject
         }
         finally
         {
-            IsBusy = false;
+            // Land the bar at 100% briefly so the user sees the completion mark
             ProgressDone = ProgressTotal;
+            await Task.Delay(400);
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
+            ProgressTotal = 0;
+            ProgressDone = 0;
         }
     }
 
     private async Task InstallFromInfAsync()
     {
+        if (IsInstalling) return; // re-entrancy guard: only one install at a time
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
             Title = "Select HP driver INF",
             Filter = "INF files (*.inf)|*.inf|All files (*.*)|*.*"
         };
         if (dlg.ShowDialog() != true) return;
-        IsBusy = true;
+
+        // Long-running op: use IsInstalling (not IsBusy) so the user can still
+        // navigate, switch tabs, etc. while the driver installs.
+        IsInstalling = true;
+        InstallIsIndeterminate = true;
+        ProgressTotal = 100;
+        ProgressDone = 0;
         try
         {
-            StatusMessage = "Installing INF (admin UAC will appear)â€¦";
+            StatusMessage = "Installing INF (admin UAC will appear)…";
+
+            // Tiny delay so the indeterminate animation has a chance to render
+            // before we await the UAC-prompt + pnputil pipeline.
+            await Task.Delay(50);
+
             var res = await _drivers.InstallFromInfAsync(dlg.FileName);
             AppendLog($"[{(res.Success ? "OK" : "FAIL")}] add-driver {dlg.FileName} exit={res.ExitCode}");
+
+            // Land the bar at 100% before the refresh kicks in.
+            InstallIsIndeterminate = false;
+            ProgressDone = 100;
+            await Task.Delay(250);
+
             if (!res.Success)
                 _dialog.ShowError("Install failed", $"exit={res.ExitCode}\n{res.StdErr}");
+
+            // Refresh on the UI thread after the bar fades.
             await RefreshAsync();
+            StatusMessage = res.Success
+                ? "Driver installed successfully."
+                : "Install failed — see log.";
         }
-        finally { IsBusy = false; }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "InstallFromInf failed");
+            AppendLog($"[FAIL] {ex.Message}");
+            _dialog.ShowError("Install failed", ex);
+        }
+        finally
+        {
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
+            ProgressTotal = 0;
+            ProgressDone = 0;
+        }
     }
 
     private void AppendLog(string line)

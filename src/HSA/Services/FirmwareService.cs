@@ -53,7 +53,7 @@ public sealed class FirmwareService : IFirmwareService
 
         if (!printer.IsNetworkPrinter || string.IsNullOrEmpty(printer.IpAddress))
         {
-            // No network path â€” fall back to HP support link.
+            // No network path — fall back to HP support link.
             info.DetectionMethod = FirmwareDetectionMethod.Unknown;
             info.UpdateCapability = FirmwareUpdateCapability.HpSupportLink;
             info.HpSupportUrl = BuildHpSupportUri(info.ModelIdentifier ?? string.Empty).ToString();

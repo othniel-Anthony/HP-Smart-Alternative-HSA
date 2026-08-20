@@ -3,7 +3,7 @@
 namespace HSA.Native;
 
 /// <summary>
-/// P/Invoke surface for winspool.drv â€” the Windows Print Spooler API.
+/// P/Invoke surface for winspool.drv — the Windows Print Spooler API.
 /// Reference: https://learn.microsoft.com/en-us/windows/win32/printdocs/print-spooler-api
 /// </summary>
 internal static class Winspool

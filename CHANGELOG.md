@@ -13,6 +13,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.4] - 2026-08-20
+
+### Fixed — Mojibake throughout
+- Replaced all `â€¦` (UTF-8 mis-decoded ellipsis), `â€"` (em-dash), `â€"` (en-dash),
+  `â€¢` (bullet), `â€™` / `â€˜` (smart quotes), and `Â·` (middle dot) with their
+  proper Unicode characters. Buttons like "Install driver from INF…" now render
+  correctly. Affects 12 source files.
+
+### Added — M3 linear progress bar in Drivers view
+- New `M3ProgressBar` style (4dp track, rounded ends, surface-container tint behind
+  a primary fill).
+- Long-running driver operations (single INF install and bulk "Remove ALL HP
+  drivers") now show the bar under the status line. Single install uses
+  indeterminate mode (pnputil has no progress), bulk remove uses determinate
+  mode driven by `IProgress<T>`.
+- A new `IsInstalling` flag (separate from `IsBusy`) means the rest of the app
+  stays usable during an install — you can switch tabs, browse the driver
+  list, etc. The Install button guards against re-entry.
+
+---
+
 ## [0.1.3] - 2026-08-20
 
 ### Changed — Modern controls (theme-wide)

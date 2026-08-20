@@ -40,7 +40,7 @@ public sealed record ConsumableStatus
     /// <summary>Last successful query time, UTC.</summary>
     public DateTime DetectedAt { get; init; } = DateTime.UtcNow;
 
-    public string LevelDisplay => LevelPercent is int p ? $"{p}%" : "â€”";
+    public string LevelDisplay => LevelPercent is int p ? $"{p}%" : "—";
     public string HealthDisplay => Health switch
     {
         ConsumableHealth.Ok => "OK",

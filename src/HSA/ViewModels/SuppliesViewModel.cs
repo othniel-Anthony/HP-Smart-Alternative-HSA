@@ -85,7 +85,7 @@ public sealed class SuppliesViewModel : ObservableObject
         try
         {
             if (Printers.Count == 0) await LoadPrintersAsync();
-            StatusMessage = "Querying ink/toner levelsâ€¦";
+            StatusMessage = "Querying ink/toner levels…";
             Items.Clear();
             ProgressTotal = Printers.Count;
             ProgressDone = 0;
@@ -95,7 +95,7 @@ public sealed class SuppliesViewModel : ObservableObject
                 ProgressDone = p.Done;
                 ProgressTotal = p.Total;
                 if (!string.IsNullOrEmpty(p.Current))
-                    StatusMessage = $"Querying {p.Current} ({p.Done + 1}/{p.Total})â€¦";
+                    StatusMessage = $"Querying {p.Current} ({p.Done + 1}/{p.Total})…";
             });
 
             var all = await _consumables.GetAllConsumablesAsync(Printers, progress);
