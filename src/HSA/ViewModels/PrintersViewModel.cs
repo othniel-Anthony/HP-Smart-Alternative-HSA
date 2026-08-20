@@ -11,6 +11,7 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IPrinterService _printers;
     private readonly IDriverService _drivers;
     private readonly IFirmwareService _firmware;
+    private readonly IModelImageService _modelImages;
     private readonly IDialogService _dialog;
     private readonly ILogger<PrintersViewModel> _log;
 
@@ -52,12 +53,14 @@ public sealed class PrintersViewModel : ObservableObject
         IPrinterService printers,
         IDriverService drivers,
         IFirmwareService firmware,
+        IModelImageService modelImages,
         IDialogService dialog,
         ILogger<PrintersViewModel> log)
     {
         _printers = printers;
         _drivers = drivers;
         _firmware = firmware;
+        _modelImages = modelImages;
         _dialog = dialog;
         _log = log;
 
@@ -120,16 +123,22 @@ public sealed class PrintersViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            StatusMessage = "Loading printersâ€¦";
+            StatusMessage = "Loading printers…";
             var all = await _printers.GetAllAsync();
             var filtered = ShowOnlyHp ? all.Where(p => p.IsHp).ToList() : all.ToList();
+            // Populate the model image URI + family on each printer
+            foreach (var p in filtered)
+            {
+                p.ModelImageUri = _modelImages.GetImageUri(p);
+                p.ModelFamily = _modelImages.GetFamily(p);
+            }
             Printers.Clear();
             foreach (var p in filtered) Printers.Add(p);
             if (SelectedPrinter is null && Printers.Count > 0)
                 SelectedPrinter = Printers[0];
             else
                 await LoadJobsAsync();
-            StatusMessage = $"Loaded {filtered.Count} printer(s) â€” {DateTime.Now:HH:mm:ss}";
+            StatusMessage = $"Loaded {filtered.Count} printer(s) — {DateTime.Now:HH:mm:ss}";
         }
         catch (Exception ex)
         {

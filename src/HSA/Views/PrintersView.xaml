@@ -50,20 +50,35 @@
                         <DataTemplate>
                             <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0">
+                                <!-- Model image -->
+                                <Border Grid.Column="0" Width="48" Height="48" CornerRadius="10"
+                                        ClipToBounds="True" Margin="0,0,14,0" VerticalAlignment="Center">
+                                    <Border.Clip>
+                                        <RectangleGeometry RadiusX="10" RadiusY="10" Rect="0,0,48,48"/>
+                                    </Border.Clip>
+                                    <Image Source="{Binding ModelImageUri}"
+                                           Stretch="Uniform"
+                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                </Border>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource TitleMediumText}"/>
+                                    <TextBlock Text="{Binding ModelFamily}" Style="{StaticResource BodySmallText}"
+                                               Foreground="{StaticResource OnSurfaceVariantBrush}"
+                                               Margin="0,2,0,0"/>
                                     <TextBlock Style="{StaticResource BodySmallText}" Margin="0,2,0,0">
                                         <Run Text="{Binding PortName}"/>
-                                        <Run Text="  â€¢  "/>
+                                        <Run Text="  •  "/>
                                         <Run Text="{Binding DriverName}"/>
                                     </TextBlock>
                                 </StackPanel>
 
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
                                     <Border Style="{StaticResource M3StatusPill}">
                                         <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource LabelMediumText}"/>
                                     </Border>

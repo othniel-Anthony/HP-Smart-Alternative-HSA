@@ -114,8 +114,11 @@ public partial class App : Application
         sc.AddSingleton<IPrinterService, PrinterService>();
         sc.AddSingleton<IDriverService, DriverService>();
         sc.AddSingleton<IFirmwareService, FirmwareService>();
+        sc.AddSingleton<IConsumableService, ConsumableService>();
+        sc.AddSingleton<IModelImageService, ModelImageService>();
         sc.AddSingleton<MainViewModel>();
         sc.AddSingleton<PrintersViewModel>();
+        sc.AddSingleton<SuppliesViewModel>();
         sc.AddSingleton<DriversViewModel>();
         sc.AddSingleton<FirmwareViewModel>();
         _services = sc.BuildServiceProvider();

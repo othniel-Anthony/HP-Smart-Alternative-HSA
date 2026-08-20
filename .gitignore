@@ -1,4 +1,4 @@
-# Build outputs
+﻿# Build outputs
 bin/
 obj/
 *.pdb
@@ -36,3 +36,6 @@ Thumbs.db
 # Test results
 TestResults/
 coverage/
+
+# Debug screenshots (don't commit)
+shot-*.png

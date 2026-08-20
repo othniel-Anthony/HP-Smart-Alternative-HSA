@@ -25,6 +25,16 @@ public sealed class SnmpClient
     // HP-specific firmware version (LASERJET / DesignJet family; returns an OctetString)
     public static readonly ObjectIdentifier HpLaserJetFirmware = new("1.3.6.1.4.1.11.2.4.3.1.1");
 
+    // RFC 3805 prtMarkerSuppliesTable (1.3.6.1.2.1.43.11.1.1) — used for ink/toner levels
+    public static readonly ObjectIdentifier MarkerSuppliesDescription = new("1.3.6.1.2.1.43.11.1.1.6");
+    public static readonly ObjectIdentifier MarkerSuppliesClass       = new("1.3.6.1.2.1.43.11.1.1.4");
+    public static readonly ObjectIdentifier MarkerSuppliesColorIndex  = new("1.3.6.1.2.1.43.11.1.1.3");
+    public static readonly ObjectIdentifier MarkerSuppliesMaxCapacity = new("1.3.6.1.2.1.43.11.1.1.8");
+    public static readonly ObjectIdentifier MarkerSuppliesLevel        = new("1.3.6.1.2.1.43.11.1.1.9");
+
+    // RFC 3805 prtMarkerColorantTable (1.3.6.1.2.1.43.12.1.1) — color names
+    public static readonly ObjectIdentifier MarkerColorantValue = new("1.3.6.1.2.1.43.12.1.1.4");
+
     private readonly string _community;
     private readonly int _timeoutMs;
 
@@ -90,5 +100,61 @@ public sealed class SnmpClient
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Walks the subtree rooted at each <paramref name="columns"/> OID and returns every
+    /// variable found, grouped by the trailing row index. The dictionary key is the index
+    /// (last component of the full OID), the value is the list of (column, value) pairs for
+    /// that row.
+    /// </summary>
+    /// <remarks>
+    /// Useful for tables like prtMarkerSuppliesTable where the column is the OID prefix
+    /// and the row index is the trailing component. We don't try to reconstruct a typed
+    /// model here — that's the caller's job.
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<int, IReadOnlyList<(ObjectIdentifier Column, string Value)>>>
+        WalkTableAsync(IPAddress target, ObjectIdentifier tableRoot, CancellationToken ct = default)
+    {
+        var result = new Dictionary<int, IReadOnlyList<(ObjectIdentifier, string)>>();
+        var endpoint = new IPEndPoint(target, DefaultPort);
+        try
+        {
+            // The synchronous Walk API in Lextm.SharpSnmpLib accumulates into a caller-supplied
+            // list. We pass a list and capture the result. Wrapped in Task.Run so the caller can await.
+            var accumulator = new List<Variable>();
+            await Task.Run(() => Messenger.Walk(
+                VersionCode.V2,
+                endpoint,
+                new OctetString(_community),
+                tableRoot,
+                accumulator,
+                _timeoutMs,
+                WalkMode.WithinSubtree), ct);
+
+            var byRow = new Dictionary<int, List<(ObjectIdentifier, string)>>();
+            foreach (var v in accumulator)
+            {
+                if (v?.Data is null) continue;
+                var s = v.Data.ToString().Trim();
+                if (string.IsNullOrEmpty(s)) continue;
+                var parts = v.Id.ToString().Split('.');
+                if (parts.Length == 0) continue;
+                if (!int.TryParse(parts[^1], out var rowIndex)) continue;
+                if (!byRow.TryGetValue(rowIndex, out var list))
+                {
+                    list = new List<(ObjectIdentifier, string)>();
+                    byRow[rowIndex] = list;
+                }
+                list.Add((v.Id, s));
+            }
+            foreach (var kv in byRow)
+                result[kv.Key] = kv.Value;
+        }
+        catch
+        {
+            // best-effort
+        }
+        return result;
     }
 }

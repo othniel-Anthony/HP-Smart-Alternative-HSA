@@ -39,4 +39,19 @@
     <Resource Include="Resources\icon-mark.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Resources\printers\laserjet-mono.png" />
+    <Resource Include="Resources\printers\laserjet-color.png" />
+    <Resource Include="Resources\printers\officejet.png" />
+    <Resource Include="Resources\printers\envy.png" />
+    <Resource Include="Resources\printers\smart-tank.png" />
+    <Resource Include="Resources\printers\generic.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\printers\Generate-PrinterIcons.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

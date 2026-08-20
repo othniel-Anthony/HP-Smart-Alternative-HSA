@@ -30,8 +30,23 @@ public sealed class PrinterInfo : INotifyPropertyChanged
     public string Comment { get; init; } = string.Empty;
     public string? IpAddress { get; init; }
 
-    // Consumables (when known)
-    public IReadOnlyList<ConsumableLevel> Consumables { get; init; } = Array.Empty<ConsumableLevel>();
+    // ---- Setable extensions (set by the view model after creation) ----
+
+    private Uri? _modelImageUri;
+    public Uri? ModelImageUri
+    {
+        get => _modelImageUri;
+        set { if (_modelImageUri != value) { _modelImageUri = value; OnPropertyChanged(); } }
+    }
+
+    private string? _modelFamily;
+    public string? ModelFamily
+    {
+        get => _modelFamily;
+        set { if (_modelFamily != value) { _modelFamily = value; OnPropertyChanged(); } }
+    }
+
+    // ---- Read-only after construction ----
 
     // Firmware (when known)
     public string? FirmwareVersion { get; init; }
@@ -65,10 +80,4 @@ public enum PrinterStatus
     WarmingUp,
     TonerLow,
     Other
-}
-
-public sealed record ConsumableLevel(string Name, string? Color, int? LevelPercent, string? PartNumber)
-{
-    public string Display =>
-        LevelPercent is int p ? $"{Name} â€” {p}%" : Name;
 }
