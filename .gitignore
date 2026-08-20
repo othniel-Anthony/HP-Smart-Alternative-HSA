@@ -1,0 +1,38 @@
+# Build outputs
+bin/
+obj/
+*.pdb
+
+# Compiled .exe + launcher in the project root (built locally; users publish from source)
+/HSA.exe
+/HSA.exe.config
+/HSA.cmd
+/brand-shot.png
+/publish/
+/*publish*/
+*.trash/
+.trash/
+
+# Rider / VS Code / Visual Studio
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+*.swp
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Test results
+TestResults/
+coverage/

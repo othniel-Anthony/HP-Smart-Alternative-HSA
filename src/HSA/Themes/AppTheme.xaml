@@ -1,0 +1,481 @@
+﻿<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        Material You (Material Design 3) light theme.
+        Source color: Circuit & Ink navy #05145C.
+        All component styles below use these tokens via DynamicResource so a future
+        dark theme (or runtime scheme switch) can be added without touching views.
+    -->
+
+    <!-- ===== Color tokens (light scheme) ===== -->
+    <Color x:Key="PrimaryColor">#1B4FCC</Color>
+    <Color x:Key="OnPrimaryColor">#FFFFFF</Color>
+    <Color x:Key="PrimaryContainerColor">#DCE3FF</Color>
+    <Color x:Key="OnPrimaryContainerColor">#001A50</Color>
+
+    <Color x:Key="SecondaryColor">#5A5C72</Color>
+    <Color x:Key="OnSecondaryColor">#FFFFFF</Color>
+    <Color x:Key="SecondaryContainerColor">#DFE0FA</Color>
+    <Color x:Key="OnSecondaryContainerColor">#171A2C</Color>
+
+    <Color x:Key="TertiaryColor">#76546E</Color>
+    <Color x:Key="OnTertiaryColor">#FFFFFF</Color>
+    <Color x:Key="TertiaryContainerColor">#FFD7F3</Color>
+    <Color x:Key="OnTertiaryContainerColor">#2C1228</Color>
+
+    <Color x:Key="ErrorColor">#BA1A1A</Color>
+    <Color x:Key="OnErrorColor">#FFFFFF</Color>
+    <Color x:Key="ErrorContainerColor">#FFDAD6</Color>
+    <Color x:Key="OnErrorContainerColor">#410002</Color>
+
+    <Color x:Key="BackgroundColor">#FEFBFF</Color>
+    <Color x:Key="OnBackgroundColor">#1B1B1F</Color>
+
+    <Color x:Key="SurfaceColor">#FEFBFF</Color>
+    <Color x:Key="OnSurfaceColor">#1B1B1F</Color>
+    <Color x:Key="OnSurfaceVariantColor">#45464F</Color>
+
+    <Color x:Key="SurfaceContainerLowestColor">#FFFFFF</Color>
+    <Color x:Key="SurfaceContainerLowColor">#F8F4FB</Color>
+    <Color x:Key="SurfaceContainerColor">#F2EFF4</Color>
+    <Color x:Key="SurfaceContainerHighColor">#ECEAEE</Color>
+    <Color x:Key="SurfaceContainerHighestColor">#E6E3E9</Color>
+
+    <Color x:Key="OutlineColor">#757680</Color>
+    <Color x:Key="OutlineVariantColor">#C5C5D0</Color>
+
+    <Color x:Key="ScrimColor">#000000</Color>
+
+    <!-- Brushes (so views can write Background="{StaticResource PrimaryBrush}") -->
+    <SolidColorBrush x:Key="PrimaryBrush"             Color="{StaticResource PrimaryColor}"/>
+    <SolidColorBrush x:Key="OnPrimaryBrush"           Color="{StaticResource OnPrimaryColor}"/>
+    <SolidColorBrush x:Key="PrimaryContainerBrush"    Color="{StaticResource PrimaryContainerColor}"/>
+    <SolidColorBrush x:Key="OnPrimaryContainerBrush"  Color="{StaticResource OnPrimaryContainerColor}"/>
+    <SolidColorBrush x:Key="SecondaryBrush"           Color="{StaticResource SecondaryColor}"/>
+    <SolidColorBrush x:Key="OnSecondaryBrush"         Color="{StaticResource OnSecondaryColor}"/>
+    <SolidColorBrush x:Key="SecondaryContainerBrush"  Color="{StaticResource SecondaryContainerColor}"/>
+    <SolidColorBrush x:Key="OnSecondaryContainerBrush" Color="{StaticResource OnSecondaryContainerColor}"/>
+    <SolidColorBrush x:Key="TertiaryBrush"            Color="{StaticResource TertiaryColor}"/>
+    <SolidColorBrush x:Key="TertiaryContainerBrush"   Color="{StaticResource TertiaryContainerColor}"/>
+    <SolidColorBrush x:Key="OnTertiaryContainerBrush" Color="{StaticResource OnTertiaryContainerColor}"/>
+    <SolidColorBrush x:Key="ErrorBrush"               Color="{StaticResource ErrorColor}"/>
+    <SolidColorBrush x:Key="OnErrorBrush"             Color="{StaticResource OnErrorColor}"/>
+    <SolidColorBrush x:Key="ErrorContainerBrush"      Color="{StaticResource ErrorContainerColor}"/>
+    <SolidColorBrush x:Key="OnErrorContainerBrush"    Color="{StaticResource OnErrorContainerColor}"/>
+    <SolidColorBrush x:Key="BackgroundBrush"          Color="{StaticResource BackgroundColor}"/>
+    <SolidColorBrush x:Key="OnBackgroundBrush"        Color="{StaticResource OnBackgroundColor}"/>
+    <SolidColorBrush x:Key="SurfaceBrush"             Color="{StaticResource SurfaceColor}"/>
+    <SolidColorBrush x:Key="OnSurfaceBrush"           Color="{StaticResource OnSurfaceColor}"/>
+    <SolidColorBrush x:Key="OnSurfaceVariantBrush"    Color="{StaticResource OnSurfaceVariantColor}"/>
+    <SolidColorBrush x:Key="SurfaceContainerLowestBrush" Color="{StaticResource SurfaceContainerLowestColor}"/>
+    <SolidColorBrush x:Key="SurfaceContainerLowBrush"    Color="{StaticResource SurfaceContainerLowColor}"/>
+    <SolidColorBrush x:Key="SurfaceContainerBrush"       Color="{StaticResource SurfaceContainerColor}"/>
+    <SolidColorBrush x:Key="SurfaceContainerHighBrush"   Color="{StaticResource SurfaceContainerHighColor}"/>
+    <SolidColorBrush x:Key="SurfaceContainerHighestBrush" Color="{StaticResource SurfaceContainerHighestColor}"/>
+    <SolidColorBrush x:Key="OutlineBrush"             Color="{StaticResource OutlineColor}"/>
+    <SolidColorBrush x:Key="OutlineVariantBrush"       Color="{StaticResource OutlineVariantColor}"/>
+
+    <!-- State layer overlays (M3 uses these for hover/focus/press). -->
+    <SolidColorBrush x:Key="PrimaryStateLayerBrush"          Color="#1B4FCC" Opacity="0.12"/>
+    <SolidColorBrush x:Key="OnSurfaceStateLayerBrush"        Color="#1B1B1F" Opacity="0.08"/>
+    <SolidColorBrush x:Key="OnSurfaceVariantStateLayerBrush" Color="#45464F" Opacity="0.08"/>
+    <SolidColorBrush x:Key="ErrorStateLayerBrush"            Color="#BA1A1A" Opacity="0.12"/>
+
+    <!-- ===== Typography (M3 type scale) ===== -->
+    <FontFamily x:Key="BrandFont">Segoe UI Variable, Segoe UI, system-ui</FontFamily>
+    <sys:Double x:Key="DisplayLargeSize">57</sys:Double>
+    <sys:Double x:Key="HeadlineMediumSize">28</sys:Double>
+    <sys:Double x:Key="TitleLargeSize">22</sys:Double>
+    <sys:Double x:Key="TitleMediumSize">16</sys:Double>
+    <sys:Double x:Key="TitleSmallSize">14</sys:Double>
+    <sys:Double x:Key="BodyLargeSize">16</sys:Double>
+    <sys:Double x:Key="BodyMediumSize">14</sys:Double>
+    <sys:Double x:Key="BodySmallSize">12</sys:Double>
+    <sys:Double x:Key="LabelLargeSize">14</sys:Double>
+    <sys:Double x:Key="LabelMediumSize">12</sys:Double>
+    <sys:Double x:Key="LabelSmallSize">11</sys:Double>
+
+    <Style x:Key="HeadlineMediumText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource HeadlineMediumSize}"/>
+        <Setter Property="FontWeight" Value="Regular"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="TitleLargeText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource TitleLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="TitleMediumText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource TitleMediumSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="TitleSmallText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource TitleSmallSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="BodyLargeText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource BodyLargeSize}"/>
+        <Setter Property="FontWeight" Value="Regular"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="BodyMediumText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource BodyMediumSize}"/>
+        <Setter Property="FontWeight" Value="Regular"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="BodySmallText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource BodySmallSize}"/>
+        <Setter Property="FontWeight" Value="Regular"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariantBrush}"/>
+    </Style>
+    <Style x:Key="LabelLargeText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+    </Style>
+    <Style x:Key="LabelMediumText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelMediumSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariantBrush}"/>
+    </Style>
+
+    <!-- ===== Cards (M3 "elevated" â€” tonal fill, no hard border, soft shadow) ===== -->
+    <Style x:Key="M3Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource SurfaceContainerBrush}"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Padding" Value="16"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="#000000" Opacity="0.06" BlurRadius="12" ShadowDepth="1"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="M3CardFilled" TargetType="Border" BasedOn="{StaticResource M3Card}">
+        <Setter Property="Background" Value="{StaticResource SurfaceContainerHighBrush}"/>
+    </Style>
+    <Style x:Key="M3CardOutlined" TargetType="Border" BasedOn="{StaticResource M3Card}">
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource OutlineVariantBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Effect" Value="{x:Null}"/>
+    </Style>
+
+    <!-- ===== Buttons ===== -->
+    <!-- Filled: highest emphasis -->
+    <Style x:Key="M3FilledButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Padding" Value="24,10"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" CornerRadius="20"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#1551B8"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#0F45A0"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.38"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Tonal: medium emphasis, primary-container fill -->
+    <Style x:Key="M3TonalButton" TargetType="Button" BasedOn="{StaticResource M3FilledButton}">
+        <Setter Property="Background" Value="{StaticResource PrimaryContainerBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryContainerBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" CornerRadius="20"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#CCD7F5"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#B7C5EE"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.38"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Outlined: medium emphasis, transparent fill, primary border -->
+    <Style x:Key="M3OutlinedButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource OutlineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Padding" Value="24,9"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" CornerRadius="20"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource OnSurfaceStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource OnSurfaceVariantStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.38"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Text: low emphasis, transparent -->
+    <Style x:Key="M3TextButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" CornerRadius="20"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource PrimaryStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource PrimaryStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.38"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- FAB: floating action button, primary, large rounded -->
+    <Style x:Key="M3Fab" TargetType="Button" BasedOn="{StaticResource M3FilledButton}">
+        <Setter Property="Width" Value="56"/>
+        <Setter Property="Height" Value="56"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Ellipse x:Name="El" Width="56" Height="56" Fill="{TemplateBinding Background}">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.18" BlurRadius="8" ShadowDepth="2"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          TextElement.FontSize="22" TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="El" Property="Fill" Value="#1551B8"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="El" Property="Fill" Value="#0F45A0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Destructive FAB / button â€” error container -->
+    <Style x:Key="M3FilledButtonError" TargetType="Button" BasedOn="{StaticResource M3FilledButton}">
+        <Setter Property="Background" Value="{StaticResource ErrorContainerBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource OnErrorContainerBrush}"/>
+    </Style>
+
+    <!-- ===== Text field (M3 outlined) ===== -->
+    <Style x:Key="M3OutlinedTextBox" TargetType="TextBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource OutlineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="14,10"/>
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource BodyLargeSize}"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource PrimaryContainerBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" CornerRadius="4"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}">
+                        <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== ListBox (M3 list, no chrome) ===== -->
+    <Style x:Key="M3ListBox" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+
+    <!-- ===== ListBoxItem (M3 list item, full-width state layer on hover/select) ===== -->
+    <Style x:Key="M3ListItem" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,2"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" CornerRadius="12"
+                            Background="{TemplateBinding Background}"
+                            Padding="14,12">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource OnSurfaceStateLayerBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SecondaryContainerBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== CheckBox (M3 â€” square with rounded corners, primary check) ===== -->
+    <Style TargetType="CheckBox">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource BodyMediumSize}"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,4"/>
+    </Style>
+
+    <!-- ===== TabItem (M3 secondary nav â€” pill on selection) ===== -->
+    <Style TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style TargetType="TabItem">
+        <Setter Property="FontFamily" Value="{StaticResource BrandFont}"/>
+        <Setter Property="FontSize" Value="{StaticResource LabelLargeSize}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariantBrush}"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Grid x:Name="Root" Margin="0,0,4,0">
+                        <Border x:Name="Bd" CornerRadius="20" Padding="20,10">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource OnSurfaceStateLayerBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SecondaryContainerBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource OnSecondaryContainerBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== TabPanel: hide the default underline strip ===== -->
+    <Style TargetType="TabPanel">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <!-- ===== Status pill (used inline for printer status) ===== -->
+    <Style x:Key="M3StatusPill" TargetType="Border">
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Background" Value="{StaticResource SecondaryContainerBrush}"/>
+    </Style>
+
+</ResourceDictionary>
