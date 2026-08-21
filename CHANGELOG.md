@@ -13,6 +13,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.5] - 2026-08-20
+
+### Added — Full registry cleanup on driver removal
+- New `pnputil /remove-device` sub-command wrapper (`PnpUtil.RemoveDeviceAsync`) -
+  the only pnputil op that actually unregisters a PnP device AND cascades to clean
+  up its `HKLM\…\Services\<svc>` and `HKLM\…\Enum\<inst>` entries.
+- New WMI query `WmiHelper.QueryPnpInstanceIdsForInf(inf)` returns the PnP
+  instance IDs bound to a driver package.
+- New `DriverService.RemoveWithRegistryCleanupAsync(driver)` runs the full
+  pipeline: enumerate PnP devices → `pnputil /remove-device /force` for each →
+  `pnputil /delete-driver /force` on the package. Returns a
+  `RegistryCleanupResult` that reports per-device success and overall status.
+- New `DriverService.RemoveAllHpWithRegistryCleanupAsync(progress)` does the
+  above for every HP driver package, with a per-driver progress callback.
+- New **Full registry cleanup** toggle in the Drivers view Actions card
+  (default ON). When on, "Remove selected driver" and "Remove ALL HP drivers"
+  use the new pipeline; the per-driver PnP devices are unregistered, the driver
+  package is deleted, and the result is logged per device. Turn it off for the
+  old store-only behavior.
+- The activity log now shows per-device success/failure for the cleanup flow,
+  so a partial result is easy to diagnose.
+- Bump to 0.1.5.
+
+---
+
 ## [0.1.4] - 2026-08-20
 
 ### Fixed — Mojibake throughout

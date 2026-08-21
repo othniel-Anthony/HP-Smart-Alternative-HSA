@@ -42,6 +42,23 @@ public static class PnpUtil
     }
 
     /// <summary>
+    /// Removes a single PnP device instance from the system. Requires admin.
+    /// The instance ID is the full PnP path (e.g. "USBPRINT\HPHP_LJ_Pro_M404\..." or
+    /// "ROOT\HP_PRINT_QUEUE\0000"). This unregisters the device AND cascades to clean
+    /// up its service / Enum / Print Spooler references in the registry - much deeper
+    /// than `/delete-driver` (which only removes the package from the store).
+    /// </summary>
+    public static async Task<CommandResult> RemoveDeviceAsync(string instanceId, bool force, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId))
+            throw new ArgumentException("Instance ID is required.", nameof(instanceId));
+        var args = force
+            ? $"/remove-device \"{instanceId}\" /force"
+            : $"/remove-device \"{instanceId}\"";
+        return await RunAsync(args, ct);
+    }
+
+    /// <summary>
     /// Adds a driver package to the driver store. Requires admin. Use this before AddPrinter
     /// if you want to install a raw INF.
     /// </summary>

@@ -60,6 +60,19 @@ public sealed class DriversViewModel : ObservableObject
         private set => SetField(ref _installIsIndeterminate, value);
     }
 
+    // When true, Remove Selected and Remove ALL HP also unregister the PnP
+    // devices that use each driver package (via `pnputil /remove-device`).
+    // This clears the related HKLM\...\Services\<svc> and HKLM\...\Enum\<inst>
+    // entries - i.e. the registry footprint of the driver. Defaults to true
+    // because most users want a real cleanup. Disable for safer / quicker
+    // removal that leaves registry entries orphaned until next reboot.
+    private bool _fullRegistryCleanup = true;
+    public bool FullRegistryCleanup
+    {
+        get => _fullRegistryCleanup;
+        set => SetField(ref _fullRegistryCleanup, value);
+    }
+
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand RemoveSelectedCommand { get; }
     public AsyncRelayCommand RemoveAllHpCommand { get; }
@@ -106,22 +119,74 @@ public sealed class DriversViewModel : ObservableObject
         var msg = d.UsedByPrinters.Count > 0
             ? $"Remove '{d.OriginalName}'?\n\nThis driver is currently used by:\n  - " +
               string.Join("\n  - ", d.UsedByPrinters) +
-              "\n\nRemoving it will break those printers. Continue with force-remove?"
-            : $"Remove '{d.OriginalName}' from the driver store?";
+              "\n\nRemoving it will break those printers. Continue with force-remove?" +
+              (FullRegistryCleanup
+                  ? "\n\nFull registry cleanup is ON - every PnP device bound to this " +
+                    "driver will also be unregistered (HKLM\\...\\Services\\<svc> and " +
+                    "HKLM\\...\\Enum\\<inst> entries will be cleared)."
+                  : "")
+            : $"Remove '{d.OriginalName}' from the driver store?" +
+              (FullRegistryCleanup
+                  ? "\n\nFull registry cleanup is ON - every PnP device bound to this " +
+                    "driver will also be unregistered."
+                  : "");
 
         if (!_dialog.ConfirmDestructive("Remove driver", msg, "Remove")) return;
 
-        IsBusy = true;
+        IsInstalling = true;
+        InstallIsIndeterminate = !FullRegistryCleanup;  // determinate when we know counts
         try
         {
-            var res = await _drivers.RemoveAsync(d, force: d.UsedByPrinters.Count > 0);
-            AppendLog($"[{(res.Success ? "OK" : "FAIL")}] {d.OriginalName} ({d.PublishedName}) exit={res.ExitCode}");
-            if (!res.Success)
-                _dialog.ShowError("Driver removal failed",
-                    $"exit={res.ExitCode}\n\n{res.StdErr}".Trim());
+            if (FullRegistryCleanup)
+            {
+                // Look up the PnP devices for an accurate count to drive the bar
+                var instanceIds = await _drivers.GetPnpInstanceIdsAsync(d);
+                ProgressTotal = Math.Max(instanceIds.Count, 1) + 1; // devices + package
+                ProgressDone = 0;
+
+                var progress = new Progress<(int Done, int Total, string Current, string Phase)>(_ =>
+                {
+                    // We don't get per-step progress back from the cleanup pipeline, so
+                    // the bar just animates in indeterminate mode for the duration.
+                });
+
+                var res = await _drivers.RemoveWithRegistryCleanupAsync(d);
+                AppendLog($"[{(res.FullySucceeded ? "OK" : "PARTIAL")}] {d.OriginalName}: {res.Summary}");
+                foreach (var dev in res.DeviceRemovals)
+                    AppendLog($"    {(dev.Success ? "OK" : "FAIL")} device {dev.InstanceId} exit={dev.ExitCode}");
+                if (!res.DriverPackageRemoved)
+                {
+                    AppendLog($"    FAIL package: {res.DriverPackageError}");
+                    _dialog.ShowError("Driver package removal failed",
+                        res.DriverPackageError ?? $"exit code reported by pnputil /delete-driver");
+                }
+                else if (!res.FullySucceeded)
+                {
+                    _dialog.ShowInfo("Driver partially cleaned",
+                        $"{d.OriginalName}: {res.Summary}. See the activity log for per-device details.");
+                }
+
+                ProgressDone = ProgressTotal;
+                await Task.Delay(400);
+            }
+            else
+            {
+                // Legacy path: just /delete-driver (no device unregistration, no registry cleanup).
+                var res = await _drivers.RemoveAsync(d, force: d.UsedByPrinters.Count > 0);
+                AppendLog($"[{(res.Success ? "OK" : "FAIL")}] {d.OriginalName} ({d.PublishedName}) exit={res.ExitCode}");
+                if (!res.Success)
+                    _dialog.ShowError("Driver removal failed",
+                        $"exit={res.ExitCode}\n\n{res.StdErr}".Trim());
+            }
             await RefreshAsync();
         }
-        finally { IsBusy = false; }
+        finally
+        {
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
+            ProgressTotal = 0;
+            ProgressDone = 0;
+        }
     }
 
     private async Task RemoveAllHpAsync()
@@ -133,9 +198,17 @@ public sealed class DriversViewModel : ObservableObject
         }
         if (!_dialog.ConfirmDestructive(
             "Remove ALL HP drivers",
-            $"This will remove {Drivers.Count} HP driver package(s) from the driver store. " +
-            "Printers that use them will stop working. " +
-            "You can reinstall them later from Windows Update or an INF.\n\nProceed?",
+            $"This will remove {Drivers.Count} HP driver package(s)." +
+            (FullRegistryCleanup
+                ? "\n\nFULL REGISTRY CLEANUP:\n" +
+                  "- Every PnP device bound to these drivers will be unregistered\n" +
+                  "  (HKLM\\...\\Services\\<svc> and HKLM\\...\\Enum\\<inst> cleared).\n" +
+                  "- The driver packages will then be removed from the store."
+                : "\n\nDriver packages will be removed from the store only. " +
+                  "Registry entries (Services/Enum) will be left orphaned until the " +
+                  "next reboot.") +
+            "\n\nPrinters that use them will stop working. " +
+            "You can reinstall later from Windows Update or an INF.\n\nProceed?",
             "Remove all HP drivers")) return;
 
         IsInstalling = true;
@@ -144,22 +217,49 @@ public sealed class DriversViewModel : ObservableObject
         ProgressDone = 0;
         try
         {
-            var progress = new Progress<(int Done, int Total, string Current)>(p =>
+            if (FullRegistryCleanup)
             {
-                ProgressDone = p.Done;
-                ProgressTotal = p.Total;
-                StatusMessage = $"Removing {p.Current} ({p.Done + 1}/{p.Total})…";
-            });
-            var snapshot = Drivers.ToList();
-            var results = await _drivers.RemoveAllHpAsync(progress);
-            int ok = results.Count(r => r.Result.Success);
-            int fail = results.Count - ok;
-            foreach (var (driver, res) in results)
-                AppendLog($"[{(res.Success ? "OK" : "FAIL")}] {driver.OriginalName} exit={res.ExitCode}");
-            AppendLog($"Summary: {ok} removed, {fail} failed.");
-            StatusMessage = $"Removed {ok} HP driver package(s); {fail} failed.";
-            _dialog.ShowInfo("HP driver cleanup complete",
-                $"{ok} driver package(s) removed.\n{fail} failed (see log panel for details).");
+                var progress = new Progress<(int Done, int Total, string Current, string Phase)>(p =>
+                {
+                    ProgressDone = p.Done;
+                    ProgressTotal = p.Total;
+                    StatusMessage = $"{p.Phase}: {p.Current} ({p.Done + 1}/{p.Total})…";
+                });
+                var results = await _drivers.RemoveAllHpWithRegistryCleanupAsync(progress);
+                int fullyOk = results.Count(r => r.FullySucceeded);
+                int partial = results.Count(r => !r.FullySucceeded && (r.DeviceRemovals.Count > 0 || r.DriverPackageRemoved));
+                int fullyFailed = results.Count - fullyOk - partial;
+                foreach (var r in results)
+                {
+                    AppendLog($"[{(r.FullySucceeded ? "OK" : partial > 0 ? "PARTIAL" : "FAIL")}] " +
+                              $"{r.DriverOriginalName}: {r.Summary}");
+                    foreach (var d in r.DeviceRemovals.Where(x => !x.Success))
+                        AppendLog($"    FAIL device {d.InstanceId} exit={d.ExitCode}");
+                }
+                AppendLog($"Summary: {fullyOk} fully cleaned, {partial} partial, {fullyFailed} failed.");
+                StatusMessage = $"{fullyOk} cleaned, {partial} partial, {fullyFailed} failed.";
+                _dialog.ShowInfo("HP driver cleanup complete",
+                    $"{fullyOk} fully cleaned, {partial} partial, {fullyFailed} failed. " +
+                    "See the activity log for per-driver details.");
+            }
+            else
+            {
+                var progress = new Progress<(int Done, int Total, string Current)>(p =>
+                {
+                    ProgressDone = p.Done;
+                    ProgressTotal = p.Total;
+                    StatusMessage = $"Removing {p.Current} ({p.Done + 1}/{p.Total})…";
+                });
+                var results = await _drivers.RemoveAllHpAsync(progress);
+                int ok = results.Count(r => r.Result.Success);
+                int fail = results.Count - ok;
+                foreach (var (driver, res) in results)
+                    AppendLog($"[{(res.Success ? "OK" : "FAIL")}] {driver.OriginalName} exit={res.ExitCode}");
+                AppendLog($"Summary: {ok} removed, {fail} failed.");
+                StatusMessage = $"Removed {ok} HP driver package(s); {fail} failed.";
+                _dialog.ShowInfo("HP driver cleanup complete",
+                    $"{ok} driver package(s) removed.\n{fail} failed (see log panel for details).");
+            }
             await RefreshAsync();
         }
         finally

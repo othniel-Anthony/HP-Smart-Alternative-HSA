@@ -86,7 +86,24 @@
                         Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
 
                 <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
-                        Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
+                        Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+
+                <!-- Full registry cleanup toggle. When on, removal also unregisters the
+                     PnP devices bound to the driver (clearing Services/Enum entries). -->
+                <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,16"
+                        CornerRadius="12">
+                    <StackPanel>
+                        <CheckBox Content="Full registry cleanup" IsChecked="{Binding FullRegistryCleanup, Mode=TwoWay}"/>
+                        <TextBlock Style="{StaticResource BodySmallText}"
+                                   Foreground="{StaticResource OnSurfaceVariantBrush}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0">
+                            When on, removal also unregisters the PnP devices bound to the
+                            driver (clearing HKLM\…\Services\&lt;svc&gt; and HKLM\…\Enum\&lt;inst&gt;).
+                            Turn off for a quicker, store-only removal that leaves the registry
+                            entries orphaned until the next reboot.
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
 
                 <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INF…"
                         Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
@@ -99,6 +116,8 @@
                     "Remove ALL HP drivers" force-removes even when printers still reference a
                     driver. Reinstall afterward via Windows Update or the INF install action.
                     <LineBreak/><LineBreak/>
+                    With Full registry cleanup on, every PnP device bound to the driver is also
+                    unregistered via <Run FontFamily="Consolas">pnputil /remove-device</Run>.
                     UAC will prompt for each pnputil call.
                 </TextBlock>
             </StackPanel>

@@ -123,6 +123,30 @@ public static class WmiHelper
     }
 
     /// <summary>
+    /// Returns the PnP instance IDs (DeviceID) of every device that is bound to a given
+    /// driver INF. These are the IDs you pass to `pnputil /remove-device &lt;id&gt;` to fully
+    /// unregister a device - including its service / Enum / Print Spooler entries in
+    /// the registry.
+    /// </summary>
+    public static IReadOnlyList<string> QueryPnpInstanceIdsForInf(string infName)
+    {
+        if (string.IsNullOrWhiteSpace(infName)) return Array.Empty<string>();
+        var result = new List<string>();
+        // WQL escape: backslash and quote. InfName is just a filename so it shouldn't
+        // contain either, but we still escape defensively.
+        var safe = infName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        using var searcher = new ManagementObjectSearcher(
+            @"root\cimv2",
+            $"SELECT DeviceID FROM Win32_PnPSignedDriver WHERE InfName = \"{safe}\"");
+        foreach (ManagementObject mo in searcher.Get())
+        {
+            var id = mo["DeviceID"] as string;
+            if (!string.IsNullOrWhiteSpace(id)) result.Add(id);
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Returns USB-attached HP devices (PnPEntities). Used to detect a just-connected printer.
     /// </summary>
     public static List<Win32PnPEntityRow> QueryUsbHpDevices()
