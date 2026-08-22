@@ -16,10 +16,26 @@ public sealed class FirmwareViewModel : ObservableObject
     public ObservableCollection<FirmwareInfo> Results { get; } = new();
 
     private PrinterInfo? _selectedPrinter;
-    public PrinterInfo? SelectedPrinter { get => _selectedPrinter; set => SetField(ref _selectedPrinter, value); }
+    public PrinterInfo? SelectedPrinter
+    {
+        get => _selectedPrinter;
+        set
+        {
+            if (SetField(ref _selectedPrinter, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
 
     private FirmwareInfo? _selectedResult;
-    public FirmwareInfo? SelectedResult { get => _selectedResult; set => SetField(ref _selectedResult, value); }
+    public FirmwareInfo? SelectedResult
+    {
+        get => _selectedResult;
+        set
+        {
+            if (SetField(ref _selectedResult, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
 
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set => SetField(ref _isBusy, value); }

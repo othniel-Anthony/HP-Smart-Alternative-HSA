@@ -16,40 +16,93 @@ public static class WmiHelper
     }
 
     /// <summary>
+    /// Eagerly enumerates instances of a WMI class into a list. Using direct CIM
+    /// access (the same path PowerShell's Get-CimInstance uses) to avoid the
+    /// WQL "Invalid query" (0x80041017) parser failure we hit on some hosts.
+    /// Eager materialization (vs yield return) is intentional: it ensures the
+    /// underlying WMI enumerator is fully consumed and disposed before we
+    /// return, so each ManagementObject is freshly owned by the caller and not
+    /// tied to a disposed collection.
+    /// </summary>
+    private static List<ManagementObject> EnumerateInstances(string wmiClassName, string scope = @"root\cimv2")
+    {
+        var result = new List<ManagementObject>();
+        using var mc = new ManagementClass(scope, wmiClassName, null);
+        foreach (ManagementObject mo in mc.GetInstances())
+        {
+            // Clone each instance so it's a fresh, independent ManagementObject that
+            // we own. Otherwise the consumer reads from a disposed object after the
+            // using-scope around mc tears down the underlying collection.
+            var copy = (ManagementObject)mo.Clone();
+            result.Add(copy);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Safe property read: returns <paramref name="defaultValue"/> when the property
+    /// is missing on the WMI class instance (some Windows builds / driver packages
+    /// don't expose every documented property, and the raw indexer throws
+    /// "Not found" 0x80041002 in that case). Used to make WMI reads robust across
+    /// OEM and version skew.
+    /// </summary>
+    private static T WmiGet<T>(ManagementObject mo, string name, T defaultValue = default!)
+    {
+        try
+        {
+            var prop = mo.Properties[name];
+            if (prop is null || prop.Value is null) return defaultValue;
+            if (prop.Value is T direct) return direct;
+            return (T)Convert.ChangeType(prop.Value, typeof(T))!;
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    private static string WmiStr(ManagementObject mo, string name)
+        => WmiGet<object>(mo, name)?.ToString() ?? string.Empty;
+
+    private static uint WmiUint(ManagementObject mo, string name)
+        => Convert.ToUInt32(WmiGet<object>(mo, name, 0u) ?? 0u);
+
+    private static bool WmiBool(ManagementObject mo, string name)
+        => Convert.ToBoolean(WmiGet<object>(mo, name, false) ?? false);
+
+    private static List<string> WmiArr(ManagementObject mo, string name)
+        => WmiGet<string[]>(mo, name, Array.Empty<string>())?.ToList() ?? new List<string>();
+
+
+    /// <summary>
     /// Returns raw Win32_Printer rows. Status field maps a numeric value to a PrinterStatus enum.
     /// </summary>
     public static List<Win32PrinterRow> QueryPrinters()
     {
         var result = new List<Win32PrinterRow>();
-        using var searcher = new ManagementObjectSearcher(
-            @"root\cimv2",
-            "SELECT Name, ShareName, PortName, DriverName, Manufacturer, Description, Status, StatusInfo, " +
-            "Default, Network, Local, Shared, Location, Comment, WorkOffline, DetectedErrorState, " +
-            "PrinterStatus, ErrorState, ExtendedPrinterStatus " +
-            "FROM Win32_Printer");
-        foreach (ManagementObject mo in searcher.Get())
+        foreach (ManagementObject mo in EnumerateInstances("Win32_Printer"))
         {
             result.Add(new Win32PrinterRow
             {
-                Name = (string)mo["Name"],
-                ShareName = mo["ShareName"] as string ?? string.Empty,
-                PortName = mo["PortName"] as string ?? string.Empty,
-                DriverName = mo["DriverName"] as string ?? string.Empty,
-                Manufacturer = (mo["Manufacturer"] as string ?? string.Empty).Trim(),
-                Description = mo["Description"] as string ?? string.Empty,
-                Status = mo["Status"] as string ?? string.Empty,
-                StatusInfo = (uint)(mo["StatusInfo"] ?? 0u),
-                IsDefault = (bool)(mo["Default"] ?? false),
-                IsNetwork = (bool)(mo["Network"] ?? false),
-                IsLocal = (bool)(mo["Local"] ?? false),
-                IsShared = (bool)(mo["Shared"] ?? false),
-                Location = mo["Location"] as string ?? string.Empty,
-                Comment = mo["Comment"] as string ?? string.Empty,
-                WorkOffline = (bool)(mo["WorkOffline"] ?? false),
-                DetectedErrorState = (uint)(mo["DetectedErrorState"] ?? 0u),
-                PrinterStatusRaw = (uint)(mo["PrinterStatus"] ?? 0u),
-                ErrorStateRaw = (uint)(mo["ErrorState"] ?? 0u),
-                ExtendedPrinterStatus = (uint)(mo["ExtendedPrinterStatus"] ?? 0u)
+                Name                  = WmiStr(mo, "Name"),
+                ShareName             = WmiStr(mo, "ShareName"),
+                PortName              = WmiStr(mo, "PortName"),
+                DriverName            = WmiStr(mo, "DriverName"),
+                Manufacturer          = WmiStr(mo, "Manufacturer").Trim(),
+                Description           = WmiStr(mo, "Description"),
+                Status                = WmiStr(mo, "Status"),
+                StatusInfo            = WmiUint(mo, "StatusInfo"),
+                IsDefault             = WmiBool(mo, "Default"),
+                IsNetwork             = WmiBool(mo, "Network"),
+                IsLocal               = WmiBool(mo, "Local"),
+                IsShared              = WmiBool(mo, "Shared"),
+                Location              = WmiStr(mo, "Location"),
+                Comment               = WmiStr(mo, "Comment"),
+                WorkOffline           = WmiBool(mo, "WorkOffline"),
+                DetectedErrorState    = WmiUint(mo, "DetectedErrorState"),
+                PrinterStatusRaw      = WmiUint(mo, "PrinterStatus"),
+                ErrorStateRaw         = WmiUint(mo, "ErrorState"),
+                ExtendedPrinterStatus = WmiUint(mo, "ExtendedPrinterStatus")
             });
         }
         return result;
@@ -62,27 +115,22 @@ public static class WmiHelper
     public static List<Win32PrinterDriverRow> QueryPrinterDrivers()
     {
         var result = new List<Win32PrinterDriverRow>();
-        using var searcher = new ManagementObjectSearcher(
-            @"root\cimv2",
-            "SELECT Name, FilePath, INFName, DriverPath, ConfigFile, HelpFile, MonitorName, " +
-            "DefaultDataType, StartMode, SupportedPlatform, Version, ManufacturerName " +
-            "FROM Win32_PrinterDriver");
-        foreach (ManagementObject mo in searcher.Get())
+        foreach (ManagementObject mo in EnumerateInstances("Win32_PrinterDriver"))
         {
             result.Add(new Win32PrinterDriverRow
             {
-                Name = (string)mo["Name"],
-                FilePath = mo["FilePath"] as string ?? string.Empty,
-                InfName = mo["INFName"] as string ?? string.Empty,
-                DriverPath = mo["DriverPath"] as string ?? string.Empty,
-                ConfigFile = mo["ConfigFile"] as string ?? string.Empty,
-                HelpFile = mo["HelpFile"] as string ?? string.Empty,
-                MonitorName = mo["MonitorName"] as string ?? string.Empty,
-                DefaultDataType = mo["DefaultDataType"] as string ?? string.Empty,
-                StartMode = mo["StartMode"] as string ?? string.Empty,
-                SupportedPlatform = mo["SupportedPlatform"] as string ?? string.Empty,
-                Version = mo["Version"] as string ?? string.Empty,
-                ManufacturerName = mo["ManufacturerName"] as string ?? string.Empty
+                Name             = WmiStr(mo, "Name"),
+                FilePath         = WmiStr(mo, "FilePath"),
+                InfName          = WmiStr(mo, "INFName"),
+                DriverPath       = WmiStr(mo, "DriverPath"),
+                ConfigFile       = WmiStr(mo, "ConfigFile"),
+                HelpFile         = WmiStr(mo, "HelpFile"),
+                MonitorName      = WmiStr(mo, "MonitorName"),
+                DefaultDataType  = WmiStr(mo, "DefaultDataType"),
+                StartMode        = WmiStr(mo, "StartMode"),
+                SupportedPlatform = WmiStr(mo, "SupportedPlatform"),
+                Version          = WmiStr(mo, "Version"),
+                ManufacturerName = WmiStr(mo, "ManufacturerName")
             });
         }
         return result;
@@ -95,28 +143,23 @@ public static class WmiHelper
     public static List<Win32PnPSignedDriverRow> QueryPnPSignedDrivers()
     {
         var result = new List<Win32PnPSignedDriverRow>();
-        using var searcher = new ManagementObjectSearcher(
-            @"root\cimv2",
-            "SELECT DeviceName, DeviceClass, DeviceID, DriverDate, DriverVersion, DriverProviderName, " +
-            "InfName, IsSigned, Signer, HardwareID, CompatibleID, LocationPath, ClassGuid " +
-            "FROM Win32_PnPSignedDriver");
-        foreach (ManagementObject mo in searcher.Get())
+        foreach (ManagementObject mo in EnumerateInstances("Win32_PnPSignedDriver"))
         {
             result.Add(new Win32PnPSignedDriverRow
             {
-                DeviceName = mo["DeviceName"] as string ?? string.Empty,
-                DeviceClass = mo["DeviceClass"] as string ?? string.Empty,
-                DeviceID = mo["DeviceID"] as string ?? string.Empty,
-                DriverDate = mo["DriverDate"] as string ?? string.Empty,
-                DriverVersion = mo["DriverVersion"] as string ?? string.Empty,
-                DriverProviderName = mo["DriverProviderName"] as string ?? string.Empty,
-                InfName = mo["InfName"] as string ?? string.Empty,
-                IsSigned = (bool)(mo["IsSigned"] ?? false),
-                Signer = mo["Signer"] as string ?? string.Empty,
-                HardwareID = (mo["HardwareID"] as string[] ?? Array.Empty<string>()).ToList(),
-                CompatibleID = (mo["CompatibleID"] as string[] ?? Array.Empty<string>()).ToList(),
-                LocationPath = mo["LocationPath"] as string ?? string.Empty,
-                ClassGuid = mo["ClassGuid"] as string ?? string.Empty
+                DeviceName        = WmiStr(mo, "DeviceName"),
+                DeviceClass       = WmiStr(mo, "DeviceClass"),
+                DeviceID          = WmiStr(mo, "DeviceID"),
+                DriverDate        = WmiStr(mo, "DriverDate"),
+                DriverVersion     = WmiStr(mo, "DriverVersion"),
+                DriverProviderName = WmiStr(mo, "DriverProviderName"),
+                InfName           = WmiStr(mo, "InfName"),
+                IsSigned          = WmiBool(mo, "IsSigned"),
+                Signer            = WmiStr(mo, "Signer"),
+                HardwareID        = WmiArr(mo, "HardwareID"),
+                CompatibleID      = WmiArr(mo, "CompatibleID"),
+                LocationPath      = WmiStr(mo, "LocationPath"),
+                ClassGuid         = WmiStr(mo, "ClassGuid")
             });
         }
         return result;
@@ -132,15 +175,11 @@ public static class WmiHelper
     {
         if (string.IsNullOrWhiteSpace(infName)) return Array.Empty<string>();
         var result = new List<string>();
-        // WQL escape: backslash and quote. InfName is just a filename so it shouldn't
-        // contain either, but we still escape defensively.
-        var safe = infName.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        using var searcher = new ManagementObjectSearcher(
-            @"root\cimv2",
-            $"SELECT DeviceID FROM Win32_PnPSignedDriver WHERE InfName = \"{safe}\"");
-        foreach (ManagementObject mo in searcher.Get())
+        foreach (ManagementObject mo in EnumerateInstances("Win32_PnPSignedDriver"))
         {
-            var id = mo["DeviceID"] as string;
+            var inf = WmiStr(mo, "InfName");
+            if (!string.Equals(inf, infName, StringComparison.OrdinalIgnoreCase)) continue;
+            var id = WmiStr(mo, "DeviceID");
             if (!string.IsNullOrWhiteSpace(id)) result.Add(id);
         }
         return result;
@@ -152,32 +191,28 @@ public static class WmiHelper
     public static List<Win32PnPEntityRow> QueryUsbHpDevices()
     {
         var result = new List<Win32PnPEntityRow>();
-        using var searcher = new ManagementObjectSearcher(
-            @"root\cimv2",
-            "SELECT Name, Caption, Description, DeviceID, Manufacturer, PNPClass, PNPClassGuid, " +
-            "Present, Status, HardwareID, CompatibleID " +
-            "FROM Win32_PnPEntity " +
-            "WHERE PNPClass = 'Printer' OR PNPClass = 'USB'");
-        foreach (ManagementObject mo in searcher.Get())
+        foreach (ManagementObject mo in EnumerateInstances("Win32_PnPEntity"))
         {
-            var name = mo["Name"] as string ?? string.Empty;
-            var manufacturer = mo["Manufacturer"] as string ?? string.Empty;
-            var hwid = (mo["HardwareID"] as string[] ?? Array.Empty<string>()).ToList();
+            var pnpClass = WmiStr(mo, "PNPClass");
+            if (pnpClass != "Printer" && pnpClass != "USB") continue;
+            var name = WmiStr(mo, "Name");
+            var manufacturer = WmiStr(mo, "Manufacturer");
+            var hwid = WmiArr(mo, "HardwareID");
             if (!IsHp(name, manufacturer, hwid)) continue;
 
             result.Add(new Win32PnPEntityRow
             {
-                Name = name,
-                Caption = mo["Caption"] as string ?? string.Empty,
-                Description = mo["Description"] as string ?? string.Empty,
-                DeviceID = mo["DeviceID"] as string ?? string.Empty,
-                Manufacturer = manufacturer,
-                PnpClass = mo["PNPClass"] as string ?? string.Empty,
-                ClassGuid = mo["PNPClassGuid"] as string ?? string.Empty,
-                Present = (bool)(mo["Present"] ?? false),
-                Status = mo["Status"] as string ?? string.Empty,
-                HardwareID = hwid,
-                CompatibleID = (mo["CompatibleID"] as string[] ?? Array.Empty<string>()).ToList()
+                Name          = name,
+                Caption       = WmiStr(mo, "Caption"),
+                Description   = WmiStr(mo, "Description"),
+                DeviceID      = WmiStr(mo, "DeviceID"),
+                Manufacturer  = manufacturer,
+                PnpClass      = pnpClass,
+                ClassGuid     = WmiStr(mo, "PNPClassGuid"),
+                Present       = WmiBool(mo, "Present"),
+                Status        = WmiStr(mo, "Status"),
+                HardwareID    = hwid,
+                CompatibleID  = WmiArr(mo, "CompatibleID")
             });
         }
         return result;

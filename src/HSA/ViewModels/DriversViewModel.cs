@@ -27,7 +27,21 @@ public sealed class DriversViewModel : ObservableObject
     public bool OnlyInUse { get => _onlyInUse; set { if (SetField(ref _onlyInUse, value)) _ = RefreshAsync(); } }
 
     private DriverInfo? _selectedDriver;
-    public DriverInfo? SelectedDriver { get => _selectedDriver; set => SetField(ref _selectedDriver, value); }
+    public DriverInfo? SelectedDriver
+    {
+        get => _selectedDriver;
+        set
+        {
+            if (SetField(ref _selectedDriver, value))
+            {
+                // SelectedDriver gates the "Remove selected" command. WPF only requeries
+                // commands on input events, so a programmatic selection (clicking a row in
+                // the list view) wouldn't refresh the button's IsEnabled until the next
+                // mouse-move. Force the requery here.
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
 
     private int _progressDone;
     public int ProgressDone { get => _progressDone; set { if (SetField(ref _progressDone, value)) OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(IsProgressing)); } }

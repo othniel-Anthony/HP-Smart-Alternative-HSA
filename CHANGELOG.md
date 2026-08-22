@@ -13,6 +13,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.6] - 2026-08-22
+
+### Fixed — Critical: Printers tab loaded zero rows, action buttons stayed disabled
+
+The Printers tab was always empty on the user's machine, and every action button
+(Set as default, Test page, Preferences, etc.) stayed greyed out no matter what
+was clicked. Three layered bugs:
+
+- **DataContext inheritance (latent since v0.1.0).** `MainWindow.DataContext` is
+  `MainViewModel`, so each `<views:XxxView />` was inheriting `MainViewModel` as
+  its own DataContext. Every `{Binding Printers}`, `{Binding RefreshCommand}`,
+  etc. in the child views silently resolved to nothing. Fix: each child view now
+  sets its own `DataContext="{Binding Printers}"` (etc.) explicitly on the tag.
+- **WMI "Invalid query" (0x80041017).** The WQL parser on this host refused the
+  `Win32_Printer` / `Win32_PnPSignedDriver` queries. Switched the helper to direct
+  CIM via `ManagementClass.GetInstances()` — the same path PowerShell's
+  `Get-CimInstance` uses — so the WQL parser is bypassed entirely.
+- **WMI "Not found" (0x80041002).** Some WMI instances don't expose every
+  documented property. Reading a missing property through the indexer throws
+  `ManagementException`. Added a `WmiGet<T>` safe-accessor that catches the
+  exception and returns the default value, so one missing property doesn't fail
+  the whole enumeration.
+
+Also: `EnumerateInstances` is now eager + clones each `ManagementObject` (via
+`mo.Clone()`) so the consumer is never handed a disposed object from a torn-down
+collection.
+
+### Fixed — Action buttons stayed disabled even with a printer selected
+
+`RelayCommand.CanExecuteChanged` was a plain event with no hookup to
+`CommandManager.RequerySuggested`, so `CommandManager.InvalidateRequerySuggested()`
+was a no-op. Buttons were stuck in their initial `IsEnabled=False` state because
+no requery was ever requested. Fix: the event now subscribes to
+`CommandManager.RequerySuggested` and `RaiseCanExecuteChanged` posts a requery.
+SelectedProperty setters in `PrintersViewModel`, `DriversViewModel`, and
+`FirmwareViewModel` also call `InvalidateRequerySuggested()` explicitly.
+
+### Changed
+- `IsHp` on `PrinterInfo` now also checks the `Name` field (and `Hewlett`) — the
+  OfficeJet's `Name` is `HPI02082C (HP OfficeJet Pro 9730 Series)` which contains
+  "HP" but the previous check only looked at Manufacturer/Model/DriverName.
+- Bumped version to 0.1.6.
+
+---
+
 ## [0.1.5] - 2026-08-20
 
 ### Added — Full registry cleanup on driver removal

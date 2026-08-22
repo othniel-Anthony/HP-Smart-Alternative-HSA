@@ -19,7 +19,9 @@ public sealed class PrinterInfo : INotifyPropertyChanged
     public bool IsNetworkPrinter { get; init; }
     public bool IsHp => Manufacturer.Contains("HP", StringComparison.OrdinalIgnoreCase)
                      || Model.Contains("HP", StringComparison.OrdinalIgnoreCase)
-                     || DriverName.Contains("HP", StringComparison.OrdinalIgnoreCase);
+                     || DriverName.Contains("HP", StringComparison.OrdinalIgnoreCase)
+                     || Name.Contains("HP", StringComparison.OrdinalIgnoreCase)
+                     || Name.Contains("Hewlett", StringComparison.OrdinalIgnoreCase);
 
     public PrinterConnectionKind Connection { get; init; } = PrinterConnectionKind.Unknown;
     public PrinterStatus Status { get; set; } = PrinterStatus.Unknown;

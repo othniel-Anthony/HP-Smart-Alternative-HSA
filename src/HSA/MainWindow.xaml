@@ -72,20 +72,28 @@
         <!-- ===== Content ===== -->
         <Grid Grid.Row="1" Background="{StaticResource BackgroundBrush}">
             <TabControl Margin="20,12,20,20" Background="Transparent">
+                <!--
+                    Each child view must set its own DataContext to the matching
+                    child ViewModel exposed by MainViewModel. Without this, the
+                    DataContext inherits from MainWindow (= MainViewModel) and
+                    every binding to {Binding Printers}, {Binding RefreshCommand}, etc.
+                    fails silently because those properties don't exist on
+                    MainViewModel. This was a latent bug since v0.1.0.
+                -->
                 <TabItem Header="Printers">
-                    <views:PrintersView />
+                    <views:PrintersView DataContext="{Binding Printers}" />
                 </TabItem>
                 <TabItem Header="Supplies">
-                    <views:SuppliesView />
+                    <views:SuppliesView DataContext="{Binding Supplies}" />
                 </TabItem>
                 <TabItem Header="Drivers">
-                    <views:DriversView />
+                    <views:DriversView DataContext="{Binding Drivers}" />
                 </TabItem>
                 <TabItem Header="Firmware">
-                    <views:FirmwareView />
+                    <views:FirmwareView DataContext="{Binding Firmware}" />
                 </TabItem>
                 <TabItem Header="Settings">
-                    <views:SettingsView />
+                    <views:SettingsView DataContext="{Binding Settings}" />
                 </TabItem>
             </TabControl>
         </Grid>

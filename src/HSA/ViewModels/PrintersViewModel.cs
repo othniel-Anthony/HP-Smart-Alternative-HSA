@@ -23,7 +23,19 @@ public sealed class PrintersViewModel : ObservableObject
     public PrinterInfo? SelectedPrinter
     {
         get => _selectedPrinter;
-        set { if (SetField(ref _selectedPrinter, value)) { _ = LoadJobsAsync(); } }
+        set
+        {
+            if (SetField(ref _selectedPrinter, value))
+            {
+                // The action commands' CanExecute is bound to SelectedPrinter is not null.
+                // CommandManager only re-evaluates on input events; programmatic changes (e.g.
+                // auto-selecting Printers[0] in RefreshAsync) don't fire a requery, so the
+                // buttons would stay IsEnabled=False until the user clicks somewhere. Force
+                // a requery here so the action buttons enable as soon as a row is picked.
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                _ = LoadJobsAsync();
+            }
+        }
     }
 
     private bool _isBusy;
