@@ -66,10 +66,12 @@ public sealed class SuppliesViewModel : ObservableObject
         {
             var all = await _printers.GetAllAsync();
             Printers.Clear();
-            foreach (var p in all.Where(p => p.IsHp && p.IsNetworkPrinter)) Printers.Add(p);
+            // Show every HP printer (network, local, USB/WSD) so the user can see
+            // which ones have supplies and which don't.
+            foreach (var p in all.Where(p => p.IsHp)) Printers.Add(p);
             StatusMessage = Printers.Count == 0
-                ? "No network HP printers found. Click Refresh to query for consumables."
-                : $"{Printers.Count} network HP printer(s) ready.";
+                ? "No HP printers found. Click Refresh to query for consumables."
+                : $"{Printers.Count} HP printer(s) ready. WSD-USB devices may not return supplies — see the status column.";
         }
         catch (Exception ex)
         {
@@ -99,8 +101,35 @@ public sealed class SuppliesViewModel : ObservableObject
             });
 
             var all = await _consumables.GetAllConsumablesAsync(Printers, progress);
+
+            // For printers that returned no consumables, add a placeholder "not available"
+            // row so the user knows we tried and can see the reason.
+            var printersWithSupplies = all.Select(c => c.PrinterName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var noData = new List<ConsumableStatus>();
+            foreach (var p in Printers)
+            {
+                if (printersWithSupplies.Contains(p.Name)) continue;
+                noData.Add(new ConsumableStatus
+                {
+                    PrinterName  = p.Name,
+                    Description  = IsWsdUsbOnly(p)
+                        ? "Supplies unavailable (WSD-USB) — WSD-Print support coming in v0.2"
+                        : "No consumable data returned (printer may not support SNMP/IPP query)",
+                    Color        = "unknown",
+                    Class        = ConsumableClass.Other,
+                    LevelPercent = null,
+                    Health       = ConsumableHealth.Unknown,
+                    DetectedAt   = DateTime.UtcNow
+                });
+            }
+
             foreach (var c in all.OrderByDescending(c => c.Health)) Items.Add(c);
-            StatusMessage = $"Found {Items.Count} consumable(s) across {Printers.Count} printer(s).";
+            foreach (var c in noData.OrderBy(c => c.PrinterName)) Items.Add(c);
+            // Refresh FilteredItems (the Supplies view binds to that, not Items).
+            ApplyFilter();
+            StatusMessage = all.Count == 0
+                ? $"No consumable data found for any of the {Printers.Count} HP printer(s). WSD-USB support is on the v0.2 roadmap."
+                : $"Found {all.Count} consumable(s) across {Printers.Count} HP printer(s).";
         }
         catch (Exception ex)
         {
@@ -113,6 +142,19 @@ public sealed class SuppliesViewModel : ObservableObject
             IsBusy = false;
             ProgressDone = ProgressTotal;
         }
+    }
+
+    /// <summary>
+    /// A WSD-USB-only printer is one whose PortName starts with "WSD-" or "USB" and
+    /// that has no network address. We use this to surface a clear "not supported yet"
+    /// message for the user.
+    /// </summary>
+    private static bool IsWsdUsbOnly(PrinterInfo p)
+    {
+        var isUsb = p.PortName.StartsWith("WSD-", StringComparison.OrdinalIgnoreCase)
+                  || p.PortName.StartsWith("USB", StringComparison.OrdinalIgnoreCase)
+                  || p.Connection == PrinterConnectionKind.Local;
+        return isUsb && string.IsNullOrEmpty(p.IpAddress);
     }
 
     private void ApplyFilter()

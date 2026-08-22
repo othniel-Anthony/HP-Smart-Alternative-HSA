@@ -10,6 +10,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - PWG 5100.11 IPP System Services firmware push (where supported by the printer)
 - Windows Update catalog integration for automatic driver fetch
 - Network printer auto-discovery (mDNS / WS-Discovery)
+- **WSD-Print SOAP for WSD-USB printers** (consumables over the WSD port monitor's transport)
+
+---
+
+## [0.1.7] - 2026-08-22
+
+### Added — IPP consumable query + multi-transport discovery
+Supplies used to come only from SNMP, which only works for HP printers with a known
+IP. The Supplies tab is now wired to a multi-transport query that tries each available
+channel per printer:
+
+1. **SNMP** (RFC 3805 `prtMarkerSuppliesTable`) for direct network HP printers.
+2. **IPP** (PWG 5100.13 `marker-levels` / `marker-names` / `marker-colors` /
+   `marker-types`) for any HP printer reachable via IPP - including IPP-over-USB
+   devices that advertise via mDNS (`_ipp._tcp.local` / `_printer._tcp.local`).
+3. **Location URL fallback** (the `DEVPKEY_Device_LocationInfo` the spooler stores
+   in the registry) for IPP-over-USB printers that the host network can still reach.
+
+New code:
+- `Native/IppClient.cs` rewritten with a proper IPP decoder that handles
+  `1setOf integer(0..100)` (RFC 8010 value tag 0x21) for `marker-levels` /
+  `marker-high-levels` / `marker-low-levels`, plus `1setOf name` and `1setOf keyword`
+  for marker names/colors/types. The old decoder only handled string values.
+- `Services/IppConsumableSource.cs` queries `marker-*` attributes and maps the IPP
+  values into `ConsumableStatus` (color, class, level %, health, part number).
+- `Services/PrinterEndpointDiscovery.cs` implements the Location URL / mDNS discovery
+  chain above. Includes a minimal mDNS query/parser (no external dependencies).
+- `Services/ConsumableService.cs` orchestrates the multi-transport strategy.
+- `ViewModels/SuppliesViewModel.cs` now lists **every** HP printer (network, local,
+  WSD-USB) and shows a clear "Supplies unavailable (WSD-USB) - WSD-Print support
+  coming in v0.2" row for printers that return no data.
+- `ViewModels/PrintersViewModel.cs` now queries all HP printers (not just network)
+  via the new `ConsumableService`, so the consumable chips on the Printers list work
+  for any HP printer that exposes IPP or SNMP.
+
+### Changed
+- The Supplies tab's empty-state message is now informative instead of silent: it tells
+  the user which printers are HP, which connection type they have, and what to do
+  for WSD-USB devices.
+- `IppAttributeSet` switched from `Dictionary<string, string>` to a typed
+  `Dictionary<string, List<IppValue>>` so callers can read integer attributes
+  directly. `FirmwareService` updated to use the new API.
+
+### Known limitation - WSD-USB consumables
+USB-connected HP printers that the spooler manages via the **WSD port monitor**
+(their PnP InstanceId starts with `SWD\PRINTENUM\WSD-` and the port name with
+`WSD-`) are the only HP printers that won't return supplies in v0.1.7. The
+Microsoft IPP Class Driver + WSD port monitor owns the only transport to those
+devices, and it doesn't expose an HTTP-reachable IPP endpoint. WSD-Print SOAP
+(via the WSDAPI + a SOAP client) is the standard way to query consumables on
+those devices and is on the v0.2 roadmap. The Supplies tab now shows a clear
+"Supplies unavailable (WSD-USB)" status row for those printers so the user
+isn't left wondering what happened.
+- Bump to 0.1.7.
 
 ---
 

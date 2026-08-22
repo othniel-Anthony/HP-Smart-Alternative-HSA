@@ -102,9 +102,12 @@ public sealed class FirmwareService : IFirmwareService
             }, ct);
             if (attrs is not null)
             {
-                info.CurrentVersion = attrs["printer-firmware-version"];
-                if (string.IsNullOrEmpty(info.ModelIdentifier) && attrs["printer-make-and-model"] is string m)
-                    info.ModelIdentifier = m;
+                info.CurrentVersion = attrs.GetString("printer-firmware-version");
+                if (string.IsNullOrEmpty(info.ModelIdentifier))
+                {
+                    var m = attrs.GetString("printer-make-and-model");
+                    if (!string.IsNullOrEmpty(m)) info.ModelIdentifier = m;
+                }
                 info.DetectionMethod = FirmwareDetectionMethod.Ipp;
                 info.UpdateCapability = FirmwareUpdateCapability.IppSystemServices;
                 info.HpSupportUrl = BuildHpSupportUri(info.ModelIdentifier ?? string.Empty).ToString();

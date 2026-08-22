@@ -186,17 +186,16 @@ public sealed class PrintersViewModel : ObservableObject
     }
 
     /// <summary>
-    /// For every network HP printer, kick off an SNMP consumable query. Each
-    /// completion assigns the result to <see cref="PrinterInfo.Consumables"/>,
-    /// which raises <see cref="System.ComponentModel.INotifyPropertyChanged.PropertyChanged"/>
+    /// For every HP printer, kick off a consumable query (SNMP for network, IPP for any
+    /// device that exposes a reachable IPP endpoint, including WSD-USB / IPP-over-USB
+    /// devices that advertise via mDNS). Each completion assigns the result to
+    /// <see cref="PrinterInfo.Consumables"/>, which raises
+    /// <see cref="System.ComponentModel.INotifyPropertyChanged.PropertyChanged"/>
     /// so the row in the printers list re-renders with the new chips.
     /// </summary>
     private async Task LoadConsumablesInBackgroundAsync(IList<PrinterInfo> printers)
     {
-        // Network + HP-targeted. We don't want to spam USB-only devices with SNMP.
-        var targets = printers
-            .Where(p => p.IsNetworkPrinter && !string.IsNullOrEmpty(p.IpAddress))
-            .ToList();
+        var targets = printers.Where(p => p.IsHp).ToList();
         if (targets.Count == 0) return;
 
         try
@@ -206,8 +205,6 @@ public sealed class PrintersViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // Individual failures are already logged in QueryOneAsync; this catch is
-            // just defense-in-depth in case Task.WhenAll surfaces an unexpected aggregate.
             _log.LogDebug(ex, "Background consumable load completed with at least one failure.");
         }
     }
