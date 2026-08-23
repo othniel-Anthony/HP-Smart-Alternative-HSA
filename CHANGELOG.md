@@ -11,6 +11,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.3] - 2026-08-23
+
+### Added
+
+- **EWS auto-derivation from `IpAddress`.** Network / Wi-Fi-attached HP printers no longer need a manual EWS URL — `EwsDiscoveryService.DiscoverAsync` derives `http://<ip>/` from `PrinterInfo.IpAddress` and probes it. The user-pinned URL still takes priority when present.
+- **"Discover EWS" button** in the Actions card. Auto-discovers the EWS URL for the selected printer using this order: (1) user-pinned, (2) `http://<ip>/` probe, (3) mDNS by WSD Port Monitor UUID (`<uuid>.local`), (4) guessed `.local` hostnames from the model name. On success the discovered URL is persisted to `EwsAddresses` so future launches skip the discovery cost. On failure the user sees a clear "click 'Set EWS URL…' to enter manually" hint.
+- **EWS status pill now distinguishes "✓ Pinned" (manually set) from "✓ Auto-detected"** (derived from IP). The status text below the pill shows the actual URL.
+
+### Changed
+
+- `ConsumableService.ResolveEwsUrl` is now async and goes through `EwsDiscoveryService` so all transports share a single source of truth for "where is the EWS for this printer?".
+- "Remove printer" now handles Win32 error 5 (access denied) with a clear error dialog explaining the typical causes (jobs pending, spooler requires admin) instead of crashing the dispatcher.
+
+### Known limitation
+- WSD-USB EWS access over the raw USB bulk interface is still not implemented. The Discover button works best for printers that are also on Wi-Fi / Ethernet (which is true for most HP AiOs); truly USB-isolated printers still need a manual URL via "Set EWS URL…".
+
+---
+
 ## [0.2.2] - 2026-08-23
 
 ### Fixed

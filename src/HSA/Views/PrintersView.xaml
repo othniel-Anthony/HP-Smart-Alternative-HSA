@@ -200,6 +200,9 @@
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Open printer EWS…"
                                 Command="{Binding OpenEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
                                 ToolTip="Opens the printer's Embedded Web Server in your default browser. Lets you change Wi-Fi, update firmware, see ink levels, etc."/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Discover EWS"
+                                Command="{Binding DiscoverEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                                ToolTip="Auto-discover the printer's EWS URL by probing the IP, mDNS, and the WSD Port Monitor registry. Saves the result for future launches."/>
                         <Button Style="{StaticResource M3TextButton}" Content="Set EWS URL…"
                                 Command="{Binding ConfigureEwsCommand}" HorizontalAlignment="Left"/>
 

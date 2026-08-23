@@ -121,6 +121,7 @@ public partial class App : Application
         sc.AddSingleton<WsdPrintConsumableSource>();
         sc.AddSingleton<PrinterEndpointDiscovery>();
         sc.AddSingleton<EwsService>();
+        sc.AddSingleton<EwsDiscoveryService>();
         sc.AddSingleton<IConsumableService, ConsumableService>();
         sc.AddSingleton<IModelImageService, ModelImageService>();
 

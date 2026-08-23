@@ -39,6 +39,7 @@ public sealed class ConsumableService : IConsumableService
     private readonly IppConsumableSource _ipp;
     private readonly WsdPrintConsumableSource _wsd;
     private readonly EwsService _ews;
+    private readonly EwsDiscoveryService _ewsDiscovery;
     private readonly PrinterEndpointDiscovery _endpoint;
     private readonly SettingsService _settings;
     private readonly ILogger<ConsumableService> _log;
@@ -48,6 +49,7 @@ public sealed class ConsumableService : IConsumableService
         IppConsumableSource ipp,
         WsdPrintConsumableSource wsd,
         EwsService ews,
+        EwsDiscoveryService ewsDiscovery,
         PrinterEndpointDiscovery endpoint,
         SettingsService settings)
     {
@@ -56,6 +58,7 @@ public sealed class ConsumableService : IConsumableService
         _ipp = ipp;
         _wsd = wsd;
         _ews = ews;
+        _ewsDiscovery = ewsDiscovery;
         _endpoint = endpoint;
         _settings = settings;
     }
@@ -85,10 +88,11 @@ public sealed class ConsumableService : IConsumableService
         }
 
         // 3) Try EWS (Embedded Web Server). The user can pin a printer's EWS URL in
-        //    Settings (keyed by the spooler DeviceId) so we know where to query even
-        //    when the WSD Port Monitor doesn't expose a reachable XAddr. EWS returns
-        //    the same CMYK state as the EWS home page - matches what HP Smart shows.
-        var ewsUrl = ResolveEwsUrl(printer);
+        //    Settings (keyed by the spooler DeviceId); otherwise EwsDiscoveryService
+        //    auto-derives it from the printer's IP address (network / Wi-Fi) or
+        //    mDNS browse. EWS returns the same CMYK state as the EWS home page —
+        //    matches what HP Smart shows.
+        var ewsUrl = await ResolveEwsUrlAsync(printer, ct);
         if (!string.IsNullOrEmpty(ewsUrl))
         {
             var ewsItems = await _ews.GetConsumablesAsync(ewsUrl, printer.Name, ct);
@@ -111,15 +115,17 @@ public sealed class ConsumableService : IConsumableService
     }
 
     /// <summary>
-    /// Looks up the printer's EWS URL from the per-UUID user-configured map. The
-    /// key is the printer's spooler DeviceId (which is stable across name changes
-    /// and port re-assignments).
+    /// Resolves the EWS URL for the printer. Tries in order:
+    ///   1. User-pinned URL keyed by DeviceId (always wins).
+    ///   2. For network printers / printers with an IP — <c>http://&lt;ip&gt;/</c>.
+    ///   3. mDNS browse by name / UUID.
+    /// Returns null if no candidate is reachable.
     /// </summary>
-    private string? ResolveEwsUrl(PrinterInfo printer)
+    private async Task<string?> ResolveEwsUrlAsync(PrinterInfo printer, CancellationToken ct)
     {
-        if (_settings is null)
+        if (_ewsDiscovery is null)
         {
-            _log.LogDebug("EWS lookup skipped: SettingsService is null");
+            _log.LogDebug("EWS lookup skipped: EwsDiscoveryService is null");
             return null;
         }
         if (string.IsNullOrEmpty(printer.DeviceId))
@@ -127,11 +133,9 @@ public sealed class ConsumableService : IConsumableService
             _log.LogDebug("EWS lookup skipped: printer.DeviceId is empty for '{Name}'", printer.Name);
             return null;
         }
-        var count = _settings.Current.EwsAddresses.Count;
-        var has = _settings.Current.EwsAddresses.TryGetValue(printer.DeviceId, out var url);
-        _log.LogInformation("EWS lookup: printer='{Name}' DeviceId='{Id}' configured={Count} hit={Hit}",
-            printer.Name, printer.DeviceId, count, has);
-        return has ? url : null;
+        // Cheap: pinned is dictionary lookup; IP probe is one HTTP GET; mDNS
+        // fallback is ~2s. Total <= ~3s worst case, usually < 50ms for pinned.
+        return await _ewsDiscovery.DiscoverAsync(printer, ct);
     }
 
     public async Task<IReadOnlyList<ConsumableStatus>> GetAllConsumablesAsync(

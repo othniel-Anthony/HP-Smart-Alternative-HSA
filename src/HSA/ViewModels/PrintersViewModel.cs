@@ -16,6 +16,7 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IConsumableService _consumables;
     private readonly PrinterEndpointDiscovery _discovery;
     private readonly EwsService _ews;
+    private readonly EwsDiscoveryService _ewsDiscovery;
     private readonly SettingsService _settings;
     private readonly IDialogService _dialog;
     private readonly ILogger<PrintersViewModel> _log;
@@ -50,8 +51,9 @@ public sealed class PrintersViewModel : ObservableObject
 
     /// <summary>
     /// Human-readable EWS configuration status for the selected printer, e.g.
-    /// "Configured: http://192.168.1.99", "Not configured", or "Select a printer".
-    /// Used as the tooltip on the short-status pill.
+    /// "Pinned: http://192.168.1.99", "Auto-detected: http://192.168.1.99",
+    /// "Not configured", or "Select a printer". Used as the tooltip on the
+    /// short-status pill.
     /// </summary>
     public string EwsStatusText
     {
@@ -60,7 +62,10 @@ public sealed class PrintersViewModel : ObservableObject
             if (SelectedPrinter is null) return "No printer selected";
             if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
                 && !string.IsNullOrWhiteSpace(url))
-                return $"Configured: {url}";
+                return $"Pinned: {url}";
+            // No manual pin — check if we'd auto-detect (network printer)
+            if (!string.IsNullOrWhiteSpace(SelectedPrinter.IpAddress))
+                return $"Auto-detected: http://{SelectedPrinter.IpAddress}/";
             return "Not configured";
         }
     }
@@ -73,7 +78,9 @@ public sealed class PrintersViewModel : ObservableObject
             if (SelectedPrinter is null) return "—";
             if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
                 && !string.IsNullOrWhiteSpace(url))
-                return "✓ Configured";
+                return "✓ Pinned";
+            if (!string.IsNullOrWhiteSpace(SelectedPrinter.IpAddress))
+                return "✓ Auto-detected";
             return "Not set";
         }
     }
@@ -87,7 +94,9 @@ public sealed class PrintersViewModel : ObservableObject
             if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
                 && !string.IsNullOrWhiteSpace(url))
                 return url;
-            return "(no EWS URL — click 'Set EWS URL…' to add one)";
+            if (!string.IsNullOrWhiteSpace(SelectedPrinter.IpAddress))
+                return $"http://{SelectedPrinter.IpAddress}/  (auto-detected; click 'Pin' to save)";
+            return "(no EWS URL — click 'Set EWS URL…' or 'Discover EWS' to add one)";
         }
     }
 
@@ -135,6 +144,7 @@ public sealed class PrintersViewModel : ObservableObject
     public AsyncRelayCommand DiscoverNetworkPrintersCommand { get; }
     public RelayCommand OpenEwsCommand { get; }
     public RelayCommand ConfigureEwsCommand { get; }
+    public AsyncRelayCommand DiscoverEwsCommand { get; }
 
     public PrintersViewModel(
         IPrinterService printers,
@@ -144,6 +154,7 @@ public sealed class PrintersViewModel : ObservableObject
         IConsumableService consumables,
         PrinterEndpointDiscovery discovery,
         EwsService ews,
+        EwsDiscoveryService ewsDiscovery,
         SettingsService settings,
         IDialogService dialog,
         ILogger<PrintersViewModel> log)
@@ -155,6 +166,7 @@ public sealed class PrintersViewModel : ObservableObject
         _consumables = consumables;
         _discovery = discovery;
         _ews = ews;
+        _ewsDiscovery = ewsDiscovery;
         _settings = settings;
         _dialog = dialog;
         _log = log;
@@ -203,8 +215,32 @@ public sealed class PrintersViewModel : ObservableObject
                 if (!_dialog.ConfirmDestructive("Remove printer",
                     $"Remove '{SelectedPrinter.Name}' from this PC? You can re-add it later. " +
                     "This does NOT remove the driver.", "Remove")) return;
-                await _printers.DeleteAsync(SelectedPrinter.Name);
-                await RefreshAsync();
+                try
+                {
+                    await _printers.DeleteAsync(SelectedPrinter.Name);
+                    StatusMessage = $"Removed '{SelectedPrinter.Name}'.";
+                    await RefreshAsync();
+                }
+                catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
+                {
+                    // Access denied — Winspool.DeletePrinter needs admin or the printer
+                    // must not be in use. Offer to open Windows' Remove Printer dialog.
+                    _log.LogWarning(ex, "Remove printer: access denied for {Printer}", SelectedPrinter.Name);
+                    _dialog.ShowError("Remove printer — access denied",
+                        $"Windows refused to remove '{SelectedPrinter.Name}' (error 5: Access is denied). " +
+                        "This usually means the printer is in use, has a print job pending, or the " +
+                        "spooler requires admin rights. Try:\n" +
+                        "  • Cancel any pending print jobs first\n" +
+                        "  • Run HSA as Administrator (right-click HSA.exe)\n" +
+                        "  • Use Windows Settings → Bluetooth & devices → Printers & scanners");
+                    StatusMessage = "Remove failed (access denied).";
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Remove printer failed for {Printer}", SelectedPrinter?.Name);
+                    _dialog.ShowError("Remove printer failed", ex);
+                    StatusMessage = "Remove failed.";
+                }
             },
             () => SelectedPrinter is not null);
         CancelJobCommand = new AsyncRelayCommand(CancelJobAsync, () => SelectedJob is not null);
@@ -219,19 +255,38 @@ public sealed class PrintersViewModel : ObservableObject
         ConfigureEwsCommand = new RelayCommand(
             _ => ConfigureEwsForSelected(),
             _ => SelectedPrinter is not null);
+        DiscoverEwsCommand = new AsyncRelayCommand(DiscoverEwsForSelectedAsync, () => SelectedPrinter is not null);
     }
 
-    private bool HasConfiguredEws(PrinterInfo p) =>
-        _settings.Current.EwsAddresses.TryGetValue(p.DeviceId, out var url) && !string.IsNullOrWhiteSpace(url);
+    private bool HasConfiguredEws(PrinterInfo p)
+    {
+        if (p is null) return false;
+        if (_settings.Current.EwsAddresses.TryGetValue(p.DeviceId, out var url)
+            && !string.IsNullOrWhiteSpace(url))
+            return true;
+        // Auto-derived from IpAddress also counts as "configured" for the button.
+        return !string.IsNullOrWhiteSpace(p.IpAddress);
+    }
+
+    private string? ResolveSelectedEwsUrl()
+    {
+        if (SelectedPrinter is null) return null;
+        if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+            && !string.IsNullOrWhiteSpace(url))
+            return url;
+        if (!string.IsNullOrWhiteSpace(SelectedPrinter.IpAddress))
+            return $"http://{SelectedPrinter.IpAddress}/";
+        return null;
+    }
 
     private void OpenEwsForSelected()
     {
         if (SelectedPrinter is null) return;
-        if (!_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
-            || string.IsNullOrWhiteSpace(url))
+        var url = ResolveSelectedEwsUrl();
+        if (string.IsNullOrEmpty(url))
         {
             _dialog.ShowInfo("EWS not configured",
-                "Click 'Set EWS URL...' to enter this printer's EWS address (e.g. http://192.168.1.99).");
+                "Click 'Set EWS URL…' or 'Discover EWS' to find this printer's EWS address.");
             return;
         }
         try
@@ -247,6 +302,48 @@ public sealed class PrintersViewModel : ObservableObject
         {
             _dialog.ShowError("Failed to open EWS", ex);
         }
+    }
+
+    /// <summary>
+    /// v0.2.3: auto-discover the EWS URL for the selected printer and persist
+    /// it to the per-printer EwsAddresses map. Tries: pinned URL, IP-based
+    /// probe, mDNS by UUID/name. Shows a status message on the Actions card.
+    /// </summary>
+    private async Task DiscoverEwsForSelectedAsync()
+    {
+        if (SelectedPrinter is null) return;
+        if (IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            StatusMessage = $"Discovering EWS for {SelectedPrinter.Name}…";
+            var url = await _ewsDiscovery.DiscoverAsync(SelectedPrinter, CancellationToken.None);
+            if (string.IsNullOrEmpty(url))
+            {
+                StatusMessage = "Could not auto-discover EWS. Click 'Set EWS URL…' to enter one manually.";
+                _dialog.ShowInfo("EWS discovery",
+                    "No EWS endpoint was found via IP probe or mDNS. " +
+                    "If the printer is on a different network or subnet, " +
+                    "click 'Set EWS URL…' to enter the address manually.");
+                return;
+            }
+            // Persist so future launches skip the discovery cost.
+            _ewsDiscovery.Pin(SelectedPrinter, url);
+            StatusMessage = $"EWS auto-discovered and pinned: {url}";
+            // Re-publish status (Pinned now)
+            OnPropertyChanged(nameof(EwsStatusText));
+            OnPropertyChanged(nameof(EwsStatusShortText));
+            OnPropertyChanged(nameof(EwsUrlDisplay));
+            OnPropertyChanged(nameof(EwsStatusBrush));
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "EWS discovery failed for {Printer}", SelectedPrinter?.Name);
+            StatusMessage = "EWS discovery failed.";
+            _dialog.ShowError("EWS discovery failed", ex);
+        }
+        finally { IsBusy = false; }
     }
 
     private async void ConfigureEwsForSelected()
