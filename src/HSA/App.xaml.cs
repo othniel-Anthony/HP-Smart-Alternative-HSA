@@ -161,10 +161,17 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// v0.2.8: for every HP printer without a pinned EWS URL, run discovery
-    /// (mDNS + UUID + subnet scan + IP-derive) and pin the result. Updates
-    /// the Printers tab's status message and a one-line summary so the user
-    /// knows what changed.
+    /// v0.2.11: self-healing EWS discovery for EVERY HP printer on launch.
+    ///
+    /// For each HP printer:
+    ///   1. If it has a pinned URL, verify it — fetch the EWS home page and
+    ///      score it against the printer's name tokens. If the score is 0
+    ///      (the URL is the wrong printer, a router, or the EWS changed)
+    ///      we re-run discovery and overwrite the pin.
+    ///   2. If it has no pin, run discovery and pin whatever we find.
+    ///
+    /// A "wrong" pin (e.g. http://192.168.1.1 pointing at a router) gets
+    /// auto-corrected on the next launch instead of staying broken forever.
     /// </summary>
     private static async Task AutoDiscoverAndPinEwsAsync(
         IServiceProvider sp, SettingsService settings)
@@ -174,39 +181,82 @@ public partial class App : Application
             var printers = sp.GetRequiredService<IPrinterService>();
             var discovery = sp.GetRequiredService<EwsDiscoveryService>();
             var pvm = sp.GetRequiredService<PrintersViewModel>();
+            var ews = sp.GetRequiredService<EwsService>();
 
             var all = await printers.GetAllAsync();
             var hp = all.Where(p => p.IsHp).ToList();
             if (hp.Count == 0) return;
 
-            int pinned = 0, alreadySet = 0, noMatch = 0;
+            int newlyPinned = 0, alreadyCorrect = 0, reDiscovered = 0, noMatch = 0;
             foreach (var p in hp)
             {
-                // Don't re-discover printers that already have a pinned URL —
-                // the user might have set it manually to a URL discovery can't
-                // find (e.g. a printer on a different subnet). A "Re-scan EWS
-                // for all HP printers" button in the Printers tab is the escape
-                // hatch for that case.
+                var tokens = EwsDiscoveryService.ExtractNameTokens(p);
+
                 if (settings.Current.EwsAddresses.TryGetValue(p.DeviceId, out var existing)
                     && !string.IsNullOrWhiteSpace(existing))
                 {
-                    alreadySet++;
+                    // Verify the existing pin. If the EWS responds and its
+                    // body contains the printer's name tokens, the pin is
+                    // correct — leave it alone. Otherwise re-discover.
+                    if (await VerifyPinnedEwsAsync(ews, existing, tokens, CancellationToken.None))
+                    {
+                        alreadyCorrect++;
+                    }
+                    else
+                    {
+                        Log.Information("Startup: pin for {Printer} ({Url}) failed verification; re-discovering.", p.Name, existing);
+                        // ignorePin: true so DiscoverAsync doesn't just return the
+                        // same broken URL it would have if we hadn't cleared it.
+                        var newUrl = await discovery.DiscoverAsync(p, CancellationToken.None, ignorePin: true);
+                        if (!string.IsNullOrEmpty(newUrl) && !string.Equals(newUrl, existing, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (discovery.Pin(p, newUrl)) reDiscovered++;
+                        }
+                        else if (string.IsNullOrEmpty(newUrl))
+                        {
+                            noMatch++;
+                            Log.Warning("Startup: re-discovery for {Printer} found nothing; keeping stale pin {Url}.", p.Name, existing);
+                        }
+                    }
                     continue;
                 }
 
+                // No pin yet — discover and pin.
                 var url = await discovery.DiscoverAsync(p, CancellationToken.None);
                 if (string.IsNullOrEmpty(url)) { noMatch++; continue; }
-                if (discovery.Pin(p, url)) pinned++;
+                if (discovery.Pin(p, url)) newlyPinned++;
             }
 
-            var summary = $"Startup EWS scan: {pinned} new, {alreadySet} already pinned, {noMatch} no match (out of {hp.Count} HP printer(s)).";
+            var summary = $"Startup EWS scan: {newlyPinned} new, {reDiscovered} corrected, {alreadyCorrect} already correct, {noMatch} no match (of {hp.Count} HP printer(s)).";
             Log.Information(summary);
-            // Show on the Printers tab so the user sees what happened.
             await pvm.ReportStartupDiscoveryAsync(summary);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Startup EWS discovery failed");
+        }
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="url"/> responds with a body that
+    /// looks like a real HP EWS. v0.2.11: only checks LooksLikeHpEws — the
+    /// name-token check is for the subnet scan. Verifying a pin is "is this
+    /// URL still pointing at a real EWS?" not "is this the right printer?"
+    /// (the latter is too strict — the EWS home page often doesn't contain
+    /// the model name in the HTML body, only in JavaScript variables).
+    /// </summary>
+    private static async Task<bool> VerifyPinnedEwsAsync(
+        EwsService ews, string url, IReadOnlyCollection<string> tokens, CancellationToken ct)
+    {
+        try
+        {
+            var body = await ews.FetchTextAsync(url, "/", ct);
+            if (string.IsNullOrEmpty(body)) return false;
+            return EwsDiscoveryService.LooksLikeHpEwsPublic(body);
+        }
+        catch
+        {
+            return false;
         }
     }
 

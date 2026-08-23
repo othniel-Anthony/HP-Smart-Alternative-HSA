@@ -46,15 +46,19 @@ public sealed class EwsDiscoveryService
 
     /// <summary>
     /// Returns the EWS base URL for the printer, or null if no candidate worked.
-    /// The user-pinned URL always wins. For non-pinned printers the first
-    /// reachable candidate is returned.
+    /// The user-pinned URL always wins — unless <paramref name="ignorePin"/> is
+    /// true (used by the launch-time self-healing path to re-discover after a
+    /// pin fails verification).
     /// </summary>
-    public async Task<string?> DiscoverAsync(PrinterInfo printer, CancellationToken ct = default)
+    public async Task<string?> DiscoverAsync(
+        PrinterInfo printer,
+        CancellationToken ct = default,
+        bool ignorePin = false)
     {
         if (printer is null) return null;
 
-        // 1) User-pinned URL (always wins).
-        if (TryGetPinned(printer, out var pinned))
+        // 1) User-pinned URL (always wins — unless we're re-discovering).
+        if (!ignorePin && TryGetPinned(printer, out var pinned))
         {
             _log.LogInformation("EWS discovery for {Printer}: using pinned URL {Url}", printer.Name, pinned);
             return pinned;
@@ -334,11 +338,18 @@ public sealed class EwsDiscoveryService
         return candidates.OrderByDescending(c => c.Score).First().Url;
     }
 
-    private static bool LooksLikeHpEws(string body)
+    private static bool LooksLikeHpEws(string body) => LooksLikeHpEwsPublic(body);
+
+    /// <summary>
+    /// Pure "is this body a real HP EWS?" check, with no name dependency.
+    /// v0.2.9+: require a positive /DevMgmt/ EWS signature. Bare "HP" is not
+    /// enough — that was the v0.2.6 false-positive source (router admin pages).
+    /// Public so <c>App.AutoDiscoverAndPinEwsAsync</c> can use it to verify
+    /// existing pins. v0.2.11.
+    /// </summary>
+    public static bool LooksLikeHpEwsPublic(string body)
     {
         if (string.IsNullOrEmpty(body)) return false;
-        // v0.2.9+: require a positive /DevMgmt/ EWS signature. Bare "HP" is not
-        // enough — that was the v0.2.6 false-positive source (router admin pages).
         return body.Contains("/DevMgmt/", StringComparison.OrdinalIgnoreCase)
             || body.Contains("Embedded Web Server", StringComparison.OrdinalIgnoreCase)
             || body.Contains("hp/device/", StringComparison.OrdinalIgnoreCase)

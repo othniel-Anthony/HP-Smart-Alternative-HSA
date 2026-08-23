@@ -129,6 +129,34 @@ public sealed class EwsService
         }
     }
 
+    /// <summary>
+    /// Fetches a plain-text (HTML) response from the EWS. Used for verification
+    /// (does this URL point at a real EWS that mentions this printer's name?)
+    /// rather than for parsing XML. v0.2.11.
+    /// </summary>
+    public async Task<string?> FetchTextAsync(string baseUrl, string path, CancellationToken ct = default)
+    {
+        try
+        {
+            var url = NormalizeBaseUrl(baseUrl) + path;
+            using var resp = await _http.GetAsync(url, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var bytes = await resp.Content.ReadAsByteArrayAsync(ct);
+            var encoding = resp.Content.Headers.ContentEncoding;
+            Stream s = new MemoryStream(bytes);
+            if (encoding.Contains("gzip"))
+                s = new GZipStream(s, CompressionMode.Decompress);
+            else if (encoding.Contains("deflate"))
+                s = new DeflateStream(s, CompressionMode.Decompress);
+            using var sr = new StreamReader(s, Encoding.UTF8);
+            return await sr.ReadToEndAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task<XDocument?> FetchXmlAsync(string baseUrl, string path, CancellationToken ct)
     {
         var url = NormalizeBaseUrl(baseUrl) + path;
