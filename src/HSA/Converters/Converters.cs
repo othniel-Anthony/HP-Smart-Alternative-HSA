@@ -96,10 +96,12 @@ public sealed class ColorNameToBrushConverter : IValueConverter
             "m"       => Magenta,
             "yellow"  => Yellow,
             "y"       => Yellow,
+            "cmy"     => Magenta,  // combined tri-color cartridge - pick the dominant hue
             "red"     => Red,
             "green"   => Green,
             "blue"    => Blue,
             "white"   => White,
+            "photo"   => Blue,
             _         => Unknown
         };
     }

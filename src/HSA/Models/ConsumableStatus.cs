@@ -40,8 +40,15 @@ public sealed record ConsumableStatus
     /// <summary>Last successful query time, UTC.</summary>
     public DateTime DetectedAt { get; init; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Optional override of the health-pill text. When set, takes precedence
+    /// over <see cref="HealthDisplay"/>. Used by the EWS source to surface
+    /// non-level states (e.g. "failed", "expired", "wrong") verbatim.
+    /// </summary>
+    public string? HealthDisplayOverride { get; init; }
+
     public string LevelDisplay => LevelPercent is int p ? $"{p}%" : "—";
-    public string HealthDisplay => Health switch
+    public string HealthDisplay => HealthDisplayOverride ?? Health switch
     {
         ConsumableHealth.Ok => "OK",
         ConsumableHealth.Low => "Low",

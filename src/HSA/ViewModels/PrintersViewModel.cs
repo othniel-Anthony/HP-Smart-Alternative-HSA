@@ -14,6 +14,8 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IModelImageService _modelImages;
     private readonly IConsumableService _consumables;
     private readonly PrinterEndpointDiscovery _discovery;
+    private readonly EwsService _ews;
+    private readonly SettingsService _settings;
     private readonly IDialogService _dialog;
     private readonly ILogger<PrintersViewModel> _log;
 
@@ -64,6 +66,8 @@ public sealed class PrintersViewModel : ObservableObject
     public AsyncRelayCommand DetectFirmwareCommand { get; }
     public AsyncRelayCommand InstallDriverCommand { get; }
     public AsyncRelayCommand DiscoverNetworkPrintersCommand { get; }
+    public RelayCommand OpenEwsCommand { get; }
+    public RelayCommand ConfigureEwsCommand { get; }
 
     public PrintersViewModel(
         IPrinterService printers,
@@ -72,6 +76,8 @@ public sealed class PrintersViewModel : ObservableObject
         IModelImageService modelImages,
         IConsumableService consumables,
         PrinterEndpointDiscovery discovery,
+        EwsService ews,
+        SettingsService settings,
         IDialogService dialog,
         ILogger<PrintersViewModel> log)
     {
@@ -81,6 +87,8 @@ public sealed class PrintersViewModel : ObservableObject
         _modelImages = modelImages;
         _consumables = consumables;
         _discovery = discovery;
+        _ews = ews;
+        _settings = settings;
         _dialog = dialog;
         _log = log;
 
@@ -129,6 +137,79 @@ public sealed class PrintersViewModel : ObservableObject
         DetectFirmwareCommand = new AsyncRelayCommand(DetectFirmwareAsync, () => SelectedPrinter is not null);
         InstallDriverCommand = new AsyncRelayCommand(InstallDriverForSelectedAsync, () => SelectedPrinter is not null);
         DiscoverNetworkPrintersCommand = new AsyncRelayCommand(DiscoverNetworkPrintersAsync);
+        OpenEwsCommand = new RelayCommand(
+            _ => OpenEwsForSelected(),
+            _ => SelectedPrinter is not null && HasConfiguredEws(SelectedPrinter));
+        ConfigureEwsCommand = new RelayCommand(
+            _ => ConfigureEwsForSelected(),
+            _ => SelectedPrinter is not null);
+    }
+
+    private bool HasConfiguredEws(PrinterInfo p) =>
+        _settings.Current.EwsAddresses.TryGetValue(p.DeviceId, out var url) && !string.IsNullOrWhiteSpace(url);
+
+    private void OpenEwsForSelected()
+    {
+        if (SelectedPrinter is null) return;
+        if (!_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+            || string.IsNullOrWhiteSpace(url))
+        {
+            _dialog.ShowInfo("EWS not configured",
+                "Click 'Set EWS URL...' to enter this printer's EWS address (e.g. http://192.168.1.99).");
+            return;
+        }
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url.TrimEnd('/') + "/",
+                UseShellExecute = true
+            };
+            System.Diagnostics.Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            _dialog.ShowError("Failed to open EWS", ex);
+        }
+    }
+
+    private async void ConfigureEwsForSelected()
+    {
+        if (SelectedPrinter is null) return;
+        var current = _settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var u) ? u : string.Empty;
+        var input = Microsoft.VisualBasic.Interaction.InputBox(
+            $"Enter the EWS URL for '{SelectedPrinter.Name}':\n\n" +
+            "Usually this is the printer's network IP, e.g. http://192.168.1.99.\n" +
+            "HSA will use this URL to read consumable state (CMYK levels, alerts).\n\n" +
+            "Tip: open the EWS in a browser first, copy the URL from the address bar.",
+            "Set EWS URL",
+            current);
+        if (string.IsNullOrWhiteSpace(input)) return;  // user cancelled
+        var url = input.Trim();
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            _dialog.ShowError("Invalid URL", "URL must start with http:// or https://");
+            return;
+        }
+        // Persist + probe
+        try { _settings.Update(s => s.EwsAddresses[SelectedPrinter.DeviceId] = url); }
+        catch (Exception ex) { _dialog.ShowError("Failed to save", ex); return; }
+        StatusMessage = $"EWS URL set to {url}. Probing…";
+        try
+        {
+            var ok = await _ews.ProbeAsync(url);
+            StatusMessage = ok
+                ? $"EWS reachable at {url}."
+                : $"EWS URL saved but {url} is not reachable. The URL is still saved; click Refresh to retry.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "EWS probe failed");
+            StatusMessage = $"EWS URL saved; probe failed: {ex.Message}";
+        }
+        // Force the Open EWS button's CanExecute to re-evaluate
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
     }
 
     /// <summary>

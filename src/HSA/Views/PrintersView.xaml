@@ -172,6 +172,18 @@
 
                     <Separator Margin="0,8" Background="{StaticResource OutlineVariantBrush}"/>
 
+                    <!-- EWS (Embedded Web Server): set the URL once and the user can
+                         open the printer's EWS dashboard in their browser. Also lets
+                         HSA read consumables (ink/toner state, model, firmware) for
+                         WSD-USB printers that don't expose a reachable IPP endpoint. -->
+                    <TextBlock Text="EWS" Style="{StaticResource TitleSmallText}"
+                               Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,4,0,8"/>
+                    <Button Style="{StaticResource M3OutlinedButton}" Content="Open printer EWS…"
+                            Command="{Binding OpenEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                            ToolTip="Opens the printer's Embedded Web Server in your default browser. Lets you change Wi-Fi, update firmware, see ink levels, etc."/>
+                    <Button Style="{StaticResource M3TextButton}" Content="Set EWS URL…"
+                            Command="{Binding ConfigureEwsCommand}" HorizontalAlignment="Left"/>
+
                     <Button Style="{StaticResource M3FilledButtonError}" Content="Remove printer"
                             Command="{Binding DeletePrinterCommand}" HorizontalAlignment="Stretch"/>
                 </StackPanel>

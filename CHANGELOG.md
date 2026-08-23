@@ -7,7 +7,55 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Planned
-- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB) — required to read consumables from WSD-USB printers. Not shipped in v0.2.0; see Known limitation.
+- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB) — required to read consumables from WSD-USB printers whose EWS isn't reachable. Not shipped in v0.2.x; see Known limitation.
+
+---
+
+## [0.2.1] - 2026-08-23
+
+### Added — EWS (Embedded Web Server) consumable source
+
+The HP OfficeJet 4650 (and many WSD-USB-attached HP printers) is reachable
+on the network at a stable IP and exposes an Embedded Web Server at
+`http://<ip>/`. The EWS `/DevMgmt/ConsumableConfigDyn.xml` endpoint returns
+cartridge state (color, level %, life state, brand) — the exact same data
+the EWS home page shows in the "Estimated supply levels" panel.
+
+- New `Services/EwsService.cs` fetches `ProductConfigDyn.xml`,
+  `ConsumableConfigDyn.xml`, and `ProductStatusDyn.xml` over HTTP (gzip-aware,
+  self-signed certs accepted since HP printers often use one).
+- `ConsumableService` now tries EWS as the 3rd transport in the chain
+  (after SNMP, IPP, before WSD-Print). When the user pins the EWS URL in
+  Settings (keyed by the printer's stable DeviceId), HSA reads the same
+  CMYK state HP Smart would show — including "Cartridge Problem" for
+  failed/missing/expired cartridges.
+- New "Open printer EWS…" button in the Printers view Actions card opens
+  the configured EWS in the user's default browser (lets them change
+  Wi-Fi, run maintenance, update firmware, see the same ink panel).
+- New "Set EWS URL…" button asks for the base URL (e.g. `http://192.168.1.99`),
+  saves it in `settings.json` under `EwsAddresses[<DeviceId>]`, and probes
+  the URL to confirm reachability.
+- New `ConsumableStatus.HealthDisplayOverride`: when the EWS reports a
+  non-OK state ("failed", "expired", "missing", "wrong"), the health pill
+  shows the verbatim state instead of a derived "Replace now" label —
+  matches what the EWS home page itself shows.
+- New `PrinterInfo.DeviceId` and `Win32PrinterRow.DeviceId`: spooler-stable
+  per-printer ID used to key the EWS address map so it survives name
+  changes and port reassignments.
+
+### Changed
+- `ConsumableStatus.HealthDisplay` now uses `HealthDisplayOverride` when set
+  (falls back to the rolled-up health label otherwise).
+
+### Known limitation
+WSD-USB printers whose EWS is NOT reachable on the network (no Wi-Fi/Ethernet
+bridge) still need the v0.2+ WSD-over-USB protocol stack. EWS is the easy
+path for printers that are also on the network (often the case for Wi-Fi
+printers that the host sees as WSD-USB because of how the queue is wired).
+The driver path is a strict superset of WSD-Print: it works whether or not
+the printer is on the network.
+
+- Bump to 0.2.1.
 
 ---
 

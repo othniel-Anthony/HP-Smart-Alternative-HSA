@@ -85,6 +85,7 @@ public static class WmiHelper
             result.Add(new Win32PrinterRow
             {
                 Name                  = WmiStr(mo, "Name"),
+                DeviceId              = WmiStr(mo, "DeviceID"),
                 ShareName             = WmiStr(mo, "ShareName"),
                 PortName              = WmiStr(mo, "PortName"),
                 DriverName            = WmiStr(mo, "DriverName"),
@@ -230,6 +231,8 @@ public static class WmiHelper
 public sealed class Win32PrinterRow
 {
     public string Name { get; init; } = string.Empty;
+    /// <summary>WMI DeviceID. Stable across name changes; used to key per-printer settings.</summary>
+    public string DeviceId { get; init; } = string.Empty;
     public string ShareName { get; init; } = string.Empty;
     public string PortName { get; init; } = string.Empty;
     public string DriverName { get; init; } = string.Empty;

@@ -38,20 +38,26 @@ public sealed class ConsumableService : IConsumableService
     private readonly SnmpClient _snmp;
     private readonly IppConsumableSource _ipp;
     private readonly WsdPrintConsumableSource _wsd;
+    private readonly EwsService _ews;
     private readonly PrinterEndpointDiscovery _endpoint;
+    private readonly SettingsService _settings;
     private readonly ILogger<ConsumableService> _log;
 
     public ConsumableService(
         ILogger<ConsumableService> log,
         IppConsumableSource ipp,
         WsdPrintConsumableSource wsd,
-        PrinterEndpointDiscovery endpoint)
+        EwsService ews,
+        PrinterEndpointDiscovery endpoint,
+        SettingsService settings)
     {
         _log = log;
         _snmp = new SnmpClient();
         _ipp = ipp;
         _wsd = wsd;
+        _ews = ews;
         _endpoint = endpoint;
+        _settings = settings;
     }
 
     public async Task<IReadOnlyList<ConsumableStatus>> GetConsumablesAsync(
@@ -78,7 +84,18 @@ public sealed class ConsumableService : IConsumableService
             if (ippItems.Count > 0) return ippItems;
         }
 
-        // 3) Try WSD-Print SOAP. The XAddr is derived from the WSD Port Monitor's port
+        // 3) Try EWS (Embedded Web Server). The user can pin a printer's EWS URL in
+        //    Settings (keyed by the spooler DeviceId) so we know where to query even
+        //    when the WSD Port Monitor doesn't expose a reachable XAddr. EWS returns
+        //    the same CMYK state as the EWS home page - matches what HP Smart shows.
+        var ewsUrl = ResolveEwsUrl(printer);
+        if (!string.IsNullOrEmpty(ewsUrl))
+        {
+            var ewsItems = await _ews.GetConsumablesAsync(ewsUrl, printer.Name, ct);
+            if (ewsItems is { Count: > 0 }) return ewsItems;
+        }
+
+        // 4) Try WSD-Print SOAP. The XAddr is derived from the WSD Port Monitor's port
         //    config (for WSD-USB devices) or from the printer's Location URL. The WSD Port
         //    Monitor forwards requests on the canonical http://<uuid>/PrintService URL to
         //    the device over WSD-over-USB. Network WSD printers expose the same URL on a
@@ -91,6 +108,30 @@ public sealed class ConsumableService : IConsumableService
         }
 
         return Array.Empty<ConsumableStatus>();
+    }
+
+    /// <summary>
+    /// Looks up the printer's EWS URL from the per-UUID user-configured map. The
+    /// key is the printer's spooler DeviceId (which is stable across name changes
+    /// and port re-assignments).
+    /// </summary>
+    private string? ResolveEwsUrl(PrinterInfo printer)
+    {
+        if (_settings is null)
+        {
+            _log.LogDebug("EWS lookup skipped: SettingsService is null");
+            return null;
+        }
+        if (string.IsNullOrEmpty(printer.DeviceId))
+        {
+            _log.LogDebug("EWS lookup skipped: printer.DeviceId is empty for '{Name}'", printer.Name);
+            return null;
+        }
+        var count = _settings.Current.EwsAddresses.Count;
+        var has = _settings.Current.EwsAddresses.TryGetValue(printer.DeviceId, out var url);
+        _log.LogInformation("EWS lookup: printer='{Name}' DeviceId='{Id}' configured={Count} hit={Hit}",
+            printer.Name, printer.DeviceId, count, has);
+        return has ? url : null;
     }
 
     public async Task<IReadOnlyList<ConsumableStatus>> GetAllConsumablesAsync(

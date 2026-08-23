@@ -22,4 +22,12 @@ public sealed class AppSettings
     /// on next launch so the user can re-run with one click.
     /// </summary>
     public string LastQuickInstallUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Per-printer EWS (Embedded Web Server) URL map. Keyed by the printer's
+    /// DeviceId (the spooler's stable per-printer ID) so the EWS URL survives
+    /// the printer's name or port name changing. Value is the base URL,
+    /// e.g. "http://192.168.1.99" or "https://192.168.1.99".
+    /// </summary>
+    public Dictionary<string, string> EwsAddresses { get; set; } = new();
 }

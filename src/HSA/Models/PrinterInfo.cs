@@ -11,6 +11,12 @@ namespace HSA.Models;
 public sealed class PrinterInfo : INotifyPropertyChanged
 {
     public string Name { get; init; } = string.Empty;
+    /// <summary>
+    /// Spooler-stable identifier (WMI DeviceId or the name when DeviceId is empty).
+    /// Used to key per-printer settings (e.g. the EWS URL) so they survive name
+    /// changes and port reassignments.
+    /// </summary>
+    public string DeviceId { get; init; } = string.Empty;
     public string ShareName { get; init; } = string.Empty;
     public string PortName { get; init; } = string.Empty;
     public string DriverName { get; init; } = string.Empty;

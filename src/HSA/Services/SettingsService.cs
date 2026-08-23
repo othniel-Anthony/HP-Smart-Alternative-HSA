@@ -92,7 +92,8 @@ public sealed class SettingsService
         {
             ThemeMode = Current.ThemeMode,
             StartWithHpOnlyFilter = Current.StartWithHpOnlyFilter,
-            LastQuickInstallUrl = Current.LastQuickInstallUrl
+            LastQuickInstallUrl = Current.LastQuickInstallUrl,
+            EwsAddresses = new Dictionary<string, string>(Current.EwsAddresses)
         };
         mutate(clone);
         Save(clone);
