@@ -153,3 +153,20 @@ public sealed class BoolToVisibilityConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>
+/// Non-null object -> Visible, null -> Collapsed. Use for showing download/install
+/// detail panes that should only appear when there's actually data to display.
+/// </summary>
+public sealed class NullToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var notNull = value is not null;
+        if (parameter is string s && s.Equals("invert", StringComparison.OrdinalIgnoreCase))
+            notNull = !notNull;
+        return notNull ? Visibility.Visible : Visibility.Collapsed;
+    }
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

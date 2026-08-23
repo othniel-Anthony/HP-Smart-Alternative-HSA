@@ -10,13 +10,21 @@
 
     <UserControl.Resources>
         <cv:BoolToVisibilityConverter x:Key="BoolVis"/>
+        <cv:NullToVisibilityConverter x:Key="NullVis"/>
     </UserControl.Resources>
 
+    <!-- Layout:
+         Row 0  = Drivers + Actions               (tall but bounded; both scroll)
+         Row 2  = Search & download                (needs the most height for results + download panel)
+         Row 4  = Activity log                     (short tail; 4-6 lines visible)
+         Star weights: 1.5 / 0 / 1.9 / 0 / 0.6     (sum = 4.0 stars) -->
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="2.4*" />
-            <RowDefinition Height="16" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="1.5*" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="1.9*" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="0.6*" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="2*" />
@@ -79,52 +87,159 @@
 
         <!-- ===== Actions ===== -->
         <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource M3Card}">
-            <StackPanel>
-                <TextBlock Text="Actions" Style="{StaticResource TitleLargeText}" Margin="0,0,0,12"/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Actions" Style="{StaticResource TitleLargeText}" Margin="0,0,0,12"/>
 
-                <Button Style="{StaticResource M3FilledButtonError}" Content="Remove selected driver"
-                        Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove selected driver"
+                            Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
 
-                <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
-                        Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
+                            Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
 
-                <!-- Full registry cleanup toggle. When on, removal also unregisters the
-                     PnP devices bound to the driver (clearing Services/Enum entries). -->
-                <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,16"
-                        CornerRadius="12">
-                    <StackPanel>
-                        <CheckBox Content="Full registry cleanup" IsChecked="{Binding FullRegistryCleanup, Mode=TwoWay}"/>
-                        <TextBlock Style="{StaticResource BodySmallText}"
-                                   Foreground="{StaticResource OnSurfaceVariantBrush}"
-                                   TextWrapping="Wrap" Margin="0,4,0,0">
-                            When on, removal also unregisters the PnP devices bound to the
-                            driver (clearing HKLM\…\Services\&lt;svc&gt; and HKLM\…\Enum\&lt;inst&gt;).
-                            Turn off for a quicker, store-only removal that leaves the registry
-                            entries orphaned until the next reboot.
-                        </TextBlock>
-                    </StackPanel>
-                </Border>
+                    <!-- Full registry cleanup toggle. When on, removal also unregisters the
+                         PnP devices bound to the driver (clearing Services/Enum entries).
+                         All pnputil commands are batched into a single elevated cmd.exe
+                         so the user sees ONE UAC prompt even when removing many drivers. -->
+                    <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,12"
+                            CornerRadius="12">
+                        <StackPanel>
+                            <CheckBox Content="Full registry cleanup" IsChecked="{Binding FullRegistryCleanup, Mode=TwoWay}"/>
+                            <TextBlock Style="{StaticResource BodySmallText}"
+                                       Foreground="{StaticResource OnSurfaceVariantBrush}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0">
+                                Also unregisters the PnP devices bound to this driver and clears
+                                their HKLM\…\Services\&lt;svc&gt; / Enum\&lt;inst&gt; entries. All commands
+                                run in one elevated cmd.exe - one UAC prompt for the whole batch.
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
 
-                <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INF…"
-                        Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
+                    <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INF…"
+                            Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,4,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
 
-                <TextBlock Text="What this does" Style="{StaticResource TitleSmallText}" Margin="0,0,0,4"/>
-                <TextBlock Style="{StaticResource BodySmallText}" TextWrapping="Wrap">
-                    Removing a driver also removes the INF and binaries from the driver store.
-                    The printer will stop working until a driver is reinstalled.
-                    <LineBreak/><LineBreak/>
-                    "Remove ALL HP drivers" force-removes even when printers still reference a
-                    driver. Reinstall afterward via Windows Update or the INF install action.
-                    <LineBreak/><LineBreak/>
-                    With Full registry cleanup on, every PnP device bound to the driver is also
-                    unregistered via <Run FontFamily="Consolas">pnputil /remove-device</Run>.
-                    UAC will prompt for each pnputil call.
-                </TextBlock>
-            </StackPanel>
+        <!-- ===== Search & download drivers ===== -->
+        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource M3Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Search &amp; download drivers"
+                           Style="{StaticResource TitleLargeText}" Margin="0,0,0,8"/>
+
+                <!-- Search input row -->
+                <Grid Grid.Row="1" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="10,8" FontSize="13"
+                             ToolTip="Printer model (e.g. 'OfficeJet Pro 9730') or hardware id (e.g. 'HPI02082C')"/>
+                    <Button Grid.Column="1" Style="{StaticResource M3TonalButton}" Content="Search"
+                            Command="{Binding SearchWindowsUpdateCommand}"
+                            IsEnabled="{Binding CanSearch}"
+                            Margin="8,0,0,0"/>
+                    <Button Grid.Column="2" Style="{StaticResource M3OutlinedButton}" Content="HP support"
+                            Command="{Binding OpenHpSupportCommand}" Margin="8,0,0,0"/>
+                    <Button Grid.Column="3" Style="{StaticResource M3OutlinedButton}" Content="MS catalog"
+                            Command="{Binding OpenMicrosoftUpdateCatalogCommand}" Margin="8,0,0,0"/>
+                </Grid>
+
+                <TextBlock Grid.Row="2" Text="{Binding SearchStatus}" Style="{StaticResource BodySmallText}"
+                           Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,0,0,8"/>
+
+                <!-- Results list (left) and download/install panel (right) -->
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ListBox Grid.Column="0" Style="{StaticResource M3ListBox}"
+                             ItemContainerStyle="{StaticResource M3ListItem}"
+                             ItemsSource="{Binding SearchResults}"
+                             SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding DriverModel}" Style="{StaticResource TitleSmallText}"/>
+                                    <TextBlock Style="{StaticResource BodySmallText}" Margin="0,2,0,0">
+                                        <Run Text="{Binding DriverManufacturer}"/>
+                                        <Run Text="  •  v"/>
+                                        <Run Text="{Binding DriverVersion}"/>
+                                        <Run Text="  •  "/>
+                                        <Run Text="{Binding DriverClass}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Border Grid.Column="2" Style="{StaticResource M3CardFilled}" Padding="14" CornerRadius="12">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0">
+                                <TextBlock Text="Download &amp; install" Style="{StaticResource TitleSmallText}" Margin="0,0,0,8"/>
+                                <Button Style="{StaticResource M3TonalButton}" Content="Download (paste URL)…"
+                                        Command="{Binding DownloadSelectedCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
+                                <Grid Margin="0,4,0,4" Height="6" Visibility="{Binding IsDownloading, Converter={StaticResource BoolVis}}">
+                                    <ProgressBar Style="{StaticResource M3ProgressBar}" Minimum="0" Maximum="100"
+                                                 Value="{Binding DownloadPercent, Mode=OneWay}"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Downloaded details (hidden when no download yet) -->
+                            <ScrollViewer Grid.Row="1" Margin="0,6,0,0"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Visibility="{Binding DownloadedDriver, Converter={StaticResource NullVis}}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource BodySmallText}" TextWrapping="Wrap">
+                                        <Run FontWeight="SemiBold" Text="Downloaded:"/>
+                                        <LineBreak/>
+                                        <Run Text="{Binding DownloadedDriver.FilePath, Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Style="{StaticResource BodySmallText}" Margin="0,6,0,0" TextWrapping="Wrap">
+                                        <Run FontWeight="SemiBold" Text="INFs in package:"/>
+                                        <LineBreak/>
+                                        <ItemsControl ItemsSource="{Binding DownloadedDriver.ContainedInfs}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </TextBlock>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <Button Grid.Row="2" Style="{StaticResource M3FilledButton}" Content="Install first INF"
+                                    Command="{Binding InstallSelectedDownloadCommand}"
+                                    HorizontalAlignment="Stretch" Margin="0,12,0,0"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
         </Border>
 
         <!-- ===== Activity log ===== -->
-        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource M3Card}">
+        <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource M3Card}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>

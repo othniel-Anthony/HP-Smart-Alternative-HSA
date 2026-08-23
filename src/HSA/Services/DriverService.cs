@@ -18,7 +18,7 @@ public interface IDriverService
     /// <summary>Removes a single driver package. Requires admin elevation.</summary>
     Task<CommandResult> RemoveAsync(DriverInfo driver, bool force, CancellationToken ct = default);
 
-    /// <summary>Removes every HP driver package in the driver store.</summary>
+    /// <summary>Removes every HP driver package in the driver store, in ONE UAC.</summary>
     Task<IReadOnlyList<(DriverInfo Driver, CommandResult Result)>> RemoveAllHpAsync(
         IProgress<(int Done, int Total, string Current)>? progress = null,
         CancellationToken ct = default);
@@ -30,13 +30,26 @@ public interface IDriverService
     /// </summary>
     Task<RegistryCleanupResult> RemoveWithRegistryCleanupAsync(DriverInfo driver, CancellationToken ct = default);
 
-    /// <summary>Bulk variant of RemoveWithRegistryCleanupAsync.</summary>
+    /// <summary>
+    /// Bulk registry-cleanup removal. All /remove-device and /delete-driver commands
+    /// are batched into a single elevated cmd.exe process - the user sees ONE UAC
+    /// prompt even when removing 20+ drivers.
+    /// </summary>
     Task<IReadOnlyList<RegistryCleanupResult>> RemoveAllHpWithRegistryCleanupAsync(
         IProgress<(int Done, int Total, string Current, string Phase)>? progress = null,
         CancellationToken ct = default);
 
     /// <summary>Adds an INF to the driver store and triggers a rescan.</summary>
     Task<CommandResult> InstallFromInfAsync(string infPath, CancellationToken ct = default);
+
+    /// <summary>Searches Windows Update for driver packages matching the model or hardware id.</summary>
+    Task<IReadOnlyList<DriverUpdate>> SearchWindowsUpdateAsync(
+        string? modelKeyword, string? hardwareId, CancellationToken ct = default);
+
+    /// <summary>Downloads a driver file from a URL and extracts any INFs from the result.</summary>
+    Task<DownloadedDriver> DownloadFromUrlAsync(
+        string url, string? suggestedFileName, IProgress<(long Done, long Total, double Percent)>? progress = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>
@@ -46,8 +59,21 @@ public interface IDriverService
 public sealed class DriverService : IDriverService
 {
     private readonly ILogger<DriverService> _log;
+    private readonly DriverStoreManager _batch;
+    private readonly WindowsUpdateClient _wua;
+    private readonly DriverDownloader _downloader;
 
-    public DriverService(ILogger<DriverService> log) => _log = log;
+    public DriverService(
+        ILogger<DriverService> log,
+        DriverStoreManager batch,
+        WindowsUpdateClient wua,
+        DriverDownloader downloader)
+    {
+        _log = log;
+        _batch = batch;
+        _wua = wua;
+        _downloader = downloader;
+    }
 
     public async Task<IReadOnlyList<DriverInfo>> GetAllAsync(bool hpOnly, CancellationToken ct = default)
     {
@@ -171,18 +197,26 @@ public sealed class DriverService : IDriverService
         CancellationToken ct = default)
     {
         var hp = (await GetAllAsync(true, ct)).ToList();
-        var results = new List<RegistryCleanupResult>(hp.Count);
+        if (hp.Count == 0) return Array.Empty<RegistryCleanupResult>();
 
-        _log.LogInformation("Starting bulk registry-cleanup removal of {Count} HP driver packages", hp.Count);
+        _log.LogInformation("Building batched plan for {Count} HP drivers (single UAC)", hp.Count);
 
+        // Build the per-driver plan first (cheap WMI lookups) so we can present a
+        // confirmation dialog with the actual scope before we prompt for UAC.
+        var plan = new List<(DriverInfo, IReadOnlyList<string>)>(hp.Count);
         for (int i = 0; i < hp.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            progress?.Report((i, hp.Count, hp[i].OriginalName, "Removing PnP devices"));
-            var r = await RemoveWithRegistryCleanupAsync(hp[i], ct);
-            results.Add(r);
+            progress?.Report((i, hp.Count, hp[i].OriginalName, "Looking up PnP devices"));
+            var ids = await Task.Run(
+                () => (IReadOnlyList<string>)WmiHelper.QueryPnpInstanceIdsForInf(hp[i].InfPath ?? string.Empty),
+                ct);
+            plan.Add((hp[i], ids));
         }
-        progress?.Report((hp.Count, hp.Count, string.Empty, "Done"));
+
+        progress?.Report((plan.Count, plan.Count, string.Empty, "Removing"));
+        var results = await _batch.RemoveBatchWithRegistryCleanupAsync(plan, ct);
+        progress?.Report((plan.Count, plan.Count, string.Empty, "Done"));
         return results;
     }
     public async Task<CommandResult> InstallFromInfAsync(string infPath, CancellationToken ct = default)
@@ -201,6 +235,20 @@ public sealed class DriverService : IDriverService
             _log.LogError("Failed to add driver INF: exit={Exit} stderr={Err}", result.ExitCode, result.StdErr);
         }
         return result;
+    }
+
+    public Task<IReadOnlyList<DriverUpdate>> SearchWindowsUpdateAsync(
+        string? modelKeyword, string? hardwareId, CancellationToken ct = default)
+    {
+        return _wua.SearchDriversAsync(hardwareId, modelKeyword, ct);
+    }
+
+    public Task<DownloadedDriver> DownloadFromUrlAsync(
+        string url, string? suggestedFileName,
+        IProgress<(long Done, long Total, double Percent)>? progress = null,
+        CancellationToken ct = default)
+    {
+        return _downloader.DownloadAsync(url, suggestedFileName, progress, ct);
     }
 
     private static async Task<Dictionary<string, string[]>> GetUsedByMapAsync(CancellationToken ct)

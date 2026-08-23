@@ -112,6 +112,9 @@ public partial class App : Application
         sc.AddLogging(b => b.AddSerilog());
         sc.AddSingleton<IDialogService, DialogService>();
         sc.AddSingleton<IPrinterService, PrinterService>();
+        sc.AddSingleton<DriverStoreManager>();
+        sc.AddSingleton<WindowsUpdateClient>();
+        sc.AddSingleton<DriverDownloader>();
         sc.AddSingleton<IDriverService, DriverService>();
         sc.AddSingleton<IFirmwareService, FirmwareService>();
         sc.AddSingleton<IppConsumableSource>();

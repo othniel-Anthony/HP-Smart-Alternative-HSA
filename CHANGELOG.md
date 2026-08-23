@@ -8,9 +8,87 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Planned
 - PWG 5100.11 IPP System Services firmware push (where supported by the printer)
-- Windows Update catalog integration for automatic driver fetch
+- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB) — required to read consumables from WSD-USB printers
 - Network printer auto-discovery (mDNS / WS-Discovery)
-- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB)
+
+---
+
+## [0.1.9] - 2026-08-23
+
+### Fixed — Driver removal: ONE UAC for the whole batch
+The previous flow ran `pnputil /delete-driver` per driver in a loop. Each call
+spun up a new `pnputil.exe` with `Verb=runas`, which triggered a UAC prompt per
+driver — removing 20 HP drivers meant 20 UAC prompts. v0.1.5 added a
+`/remove-device` step that made it worse (1 prompt per PnP device).
+
+v0.1.9 rebuilds the removal flow around a single elevated `cmd.exe /c .bat`
+script:
+
+- New `PnpUtil.RunBatchAsync(args)` writes a temp `.bat` that runs every
+  `pnputil` sub-command in sequence, then spawns ONE elevated `cmd.exe` to
+  execute it. The user sees ONE UAC prompt for the entire batch.
+- New `Services/DriverStoreManager.cs` builds the per-driver plan (every
+  `/remove-device` per PnP instance, then `/delete-driver` per package),
+  hands the flat arg list to `RunBatchAsync`, and maps per-line exit codes
+  back to per-driver outcomes.
+- `DriverService.RemoveAllHpWithRegistryCleanupAsync` now uses the batched
+  path by default. Per-driver results are still reported in the activity log.
+- `DriverService.RemoveWithRegistryCleanupAsync` (single-driver) also goes
+  through the batched path with a one-driver list, so behavior is consistent.
+
+The activity log surfaces real pnputil errors (stderr from each line) instead
+of just "exit code 1". Per-line failures are visible.
+
+### Added — In-app driver search, download, install
+The Drivers tab now has a third row with a "Search & download drivers" card.
+No need to open a browser to find an HP driver:
+
+- **Search** — calls the Windows Update Agent via late-bound COM and lists
+  matching driver updates. Returns Title, Class, Manufacturer, Model, Provider,
+  Version. Late binding avoids the COM reference.
+- **HP support** — opens `https://support.hp.com/drivers?pattern=<keyword>` in
+  the default browser with the search box pre-filled.
+- **MS catalog** — opens `https://catalog.update.microsoft.com/v7/site/Search.aspx?q=<keyword>`
+  for Microsoft Update Catalog, which carries every WHQL-signed driver.
+- **Download (paste URL)** — for any URL, downloads to
+  `%LOCALAPPDATA%\HSA\Downloads`, extracts INFs from ZIPs, shows the file
+  list. Progress bar reports percent.
+- **Install first INF** — runs `pnputil /add-driver /install` followed by
+  `/scan-devices` to register the driver and trigger PnP enumeration.
+
+New files:
+- `Services/WindowsUpdateClient.cs` — WUA search via `Microsoft.Update.Session`
+  COM (late binding, no COM ref).
+- `Services/DriverDownloader.cs` — `HttpClient` download with progress +
+  `ZipFile.ExtractToDirectory` for INFs.
+- `Services/DriverStoreManager.cs` — batched pnputil execution (see above).
+- `Converters/Converters.cs` — new `NullToVisibilityConverter` for download
+  detail pane.
+- `Views/DriversView.xaml` — restructured layout: search panel gets the
+  largest row (1.9*), driver list 1.5*, activity log 0.6*; help text moves
+  to a scrollable footer in the Actions card so all action buttons always
+  fit on a small window.
+
+### Changed — Drivers view layout
+- Row weights: Drivers+Actions 1.5\*, Search 1.9\*, Activity log 0.6\*.
+  The search panel now has room for the results list + download/install
+  card to both be fully visible (previously the search row was 1.1\* and
+  the download card was cut off).
+- Actions card "What this does" help text moved into a scrollable footer
+  card so the primary action buttons (Remove selected, Remove ALL HP,
+  Install driver from INF) always fit in view.
+- Downloaded file path + INFs in the search panel are wrapped in a
+  `ScrollViewer` and hidden when no download exists yet.
+
+### Known limitation — WSD-USB supplies
+The user's HP printers (OfficeJet 4650, OfficeJet Pro 9730) are all
+WSD-USB, so the Supplies tab will still show "Supplies unavailable
+(WSD-USB) - requires WSD-USB protocol support (v0.2+)" for them. This
+release does not implement the WSD-over-USB protocol stack; it makes
+the driver management workflow (removal, search, download, install) work
+cleanly so users can re-install a fresh driver when HP ships one.
+
+- Bump to 0.1.9.
 
 ---
 

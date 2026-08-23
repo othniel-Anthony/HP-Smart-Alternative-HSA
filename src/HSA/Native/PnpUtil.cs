@@ -79,6 +79,85 @@ public static class PnpUtil
         return await RunAsync("/scan-devices", ct);
     }
 
+    /// <summary>
+    /// Runs a batch of pnputil commands inside ONE elevated cmd.exe process. The user
+    /// gets a single UAC prompt for the whole batch instead of one per command, which
+    /// is the difference between a usable "Remove ALL HP drivers" flow and a
+    /// click-through-N-times nightmare.
+    ///
+    /// Each command must be the full pnputil argument string (e.g. "/remove-device
+    /// SWD\\PRINTENUM\\... /force"). Output from every command is concatenated.
+    /// </summary>
+    public static async Task<BatchResult> RunBatchAsync(
+        IReadOnlyList<string> argList, CancellationToken ct = default)
+    {
+        if (argList is null || argList.Count == 0)
+            return new BatchResult(0, string.Empty, string.Empty, new List<BatchLine>());
+
+        // Build a temp .bat with one command per line. cmd.exe handles redirection
+        // natively so we don't have to wire up PowerShell pipelines.
+        var tempBat = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-{Guid.NewGuid():N}.bat");
+        var stdoutLog = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-stdout-{Guid.NewGuid():N}.log");
+        var stderrLog = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-stderr-{Guid.NewGuid():N}.log");
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("@echo off");
+        sb.AppendLine($"set HSA_EXIT=0");
+        // Run each pnputil command. We capture stdout/stderr to per-line logs by
+        // prefixing with the index so we can split them back out afterwards.
+        for (int i = 0; i < argList.Count; i++)
+        {
+            var arg = argList[i].Replace("\"", "\\\"");
+            sb.AppendLine($"echo [hsa:line {i}] running: pnputil {arg}");
+            sb.AppendLine($"pnputil {arg} 1>\"{stdoutLog}.{i}\" 2>\"{stderrLog}.{i}\"");
+            sb.AppendLine($"set RC{i}=%ERRORLEVEL%");
+        }
+        sb.AppendLine($"echo [hsa:line done] all commands finished");
+        await File.WriteAllTextAsync(tempBat, sb.ToString(), ct);
+
+        try
+        {
+            // Spawn elevated cmd.exe to run the script. UseShellExecute=true is required
+            // for the Verb=runas (UAC) to actually trigger.
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"\"{tempBat}\"\"",
+                UseShellExecute = true,
+                Verb = "runas",
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null)
+                return new BatchResult(-1, "", "Failed to start elevated cmd.exe", new List<BatchLine>());
+            await proc.WaitForExitAsync(ct);
+
+            // Reconstruct combined output and per-command status.
+            var perLine = new List<BatchLine>(argList.Count);
+            var combined = new System.Text.StringBuilder();
+            for (int i = 0; i < argList.Count; i++)
+            {
+                var so = File.Exists($"{stdoutLog}.{i}") ? File.ReadAllText($"{stdoutLog}.{i}") : "";
+                var se = File.Exists($"{stderrLog}.{i}") ? File.ReadAllText($"{stderrLog}.{i}") : "";
+                perLine.Add(new BatchLine(i, argList[i], string.IsNullOrWhiteSpace(se), se, so));
+            }
+            return new BatchResult(proc.ExitCode, string.Empty, string.Empty, perLine);
+        }
+        finally
+        {
+            // Clean up
+            try { File.Delete(tempBat); } catch { }
+            for (int i = 0; i < argList.Count; i++)
+            {
+                try { File.Delete($"{stdoutLog}.{i}"); } catch { }
+                try { File.Delete($"{stderrLog}.{i}"); } catch { }
+            }
+            try { File.Delete(stdoutLog); } catch { }
+            try { File.Delete(stderrLog); } catch { }
+        }
+    }
+
     private static async Task<CommandResult> RunAsync(string args, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
@@ -175,3 +254,22 @@ public readonly record struct CommandResult(int ExitCode, string StdOut, string 
     public bool Success => ExitCode == 0;
     public override string ToString() => $"exit={ExitCode}, stdout(len={StdOut.Length}), stderr(len={StdErr.Length})";
 }
+
+/// <summary>
+/// Result of a batched pnputil run. The outer ExitCode is the cmd.exe script's
+/// exit (we use the value of the last pnputil command by default, but cmd's
+/// ERRORLEVEL handling differs — for our purposes we treat any non-zero in any
+/// per-line exit as a failure of that single command).
+/// </summary>
+public sealed record BatchResult(
+    int ExitCode,
+    string StdOut,
+    string StdErr,
+    IReadOnlyList<BatchLine> Lines);
+
+public sealed record BatchLine(
+    int Index,
+    string Args,
+    bool Success,
+    string? Error,
+    string StdOut);

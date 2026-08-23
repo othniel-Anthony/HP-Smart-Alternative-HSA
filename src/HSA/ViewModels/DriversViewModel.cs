@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.IO;
 using HSA.Models;
 using HSA.Services;
 using Microsoft.Extensions.Logging;
@@ -87,10 +88,87 @@ public sealed class DriversViewModel : ObservableObject
         set => SetField(ref _fullRegistryCleanup, value);
     }
 
+    // ===== Search & download (in-app driver discovery) =====
+    private string _searchKeyword = string.Empty;
+    public string SearchKeyword
+    {
+        get => _searchKeyword;
+        set
+        {
+            if (SetField(ref _searchKeyword, value))
+            {
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                OnPropertyChanged(nameof(CanSearch));
+            }
+        }
+    }
+    public bool CanSearch => !string.IsNullOrWhiteSpace(_searchKeyword) && !IsSearching;
+
+    private bool _isSearching;
+    public bool IsSearching
+    {
+        get => _isSearching;
+        set
+        {
+            if (SetField(ref _isSearching, value))
+            {
+                OnPropertyChanged(nameof(CanSearch));
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
+    public ObservableCollection<DriverUpdate> SearchResults { get; } = new();
+
+    private DriverUpdate? _selectedSearchResult;
+    public DriverUpdate? SelectedSearchResult
+    {
+        get => _selectedSearchResult;
+        set
+        {
+            if (SetField(ref _selectedSearchResult, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private string _searchStatus = "Type a model or hardware id and search Windows Update.";
+    public string SearchStatus { get => _searchStatus; set => SetField(ref _searchStatus, value); }
+
+    private bool _isDownloading;
+    public bool IsDownloading
+    {
+        get => _isDownloading;
+        set
+        {
+            if (SetField(ref _isDownloading, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private double _downloadPercent;
+    public double DownloadPercent { get => _downloadPercent; set => SetField(ref _downloadPercent, value); }
+
+    private DownloadedDriver? _downloadedDriver;
+    public DownloadedDriver? DownloadedDriver
+    {
+        get => _downloadedDriver;
+        set
+        {
+            if (SetField(ref _downloadedDriver, value))
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand RemoveSelectedCommand { get; }
     public AsyncRelayCommand RemoveAllHpCommand { get; }
     public AsyncRelayCommand InstallFromInfCommand { get; }
+    public AsyncRelayCommand SearchWindowsUpdateCommand { get; }
+    public AsyncRelayCommand DownloadSelectedCommand { get; }
+    public AsyncRelayCommand InstallSelectedDownloadCommand { get; }
+    public RelayCommand OpenHpSupportCommand { get; }
+    public RelayCommand OpenMicrosoftUpdateCatalogCommand { get; }
+    public RelayCommand ClearDownloadCommand { get; }
 
     public DriversViewModel(IDriverService drivers, IDialogService dialog, ILogger<DriversViewModel> log)
     {
@@ -102,6 +180,22 @@ public sealed class DriversViewModel : ObservableObject
         RemoveSelectedCommand = new AsyncRelayCommand(RemoveSelectedAsync, () => SelectedDriver is not null);
         RemoveAllHpCommand = new AsyncRelayCommand(RemoveAllHpAsync);
         InstallFromInfCommand = new AsyncRelayCommand(InstallFromInfAsync);
+        SearchWindowsUpdateCommand = new AsyncRelayCommand(
+            SearchWindowsUpdateAsync,
+            () => !string.IsNullOrWhiteSpace(SearchKeyword) && !IsSearching);
+        DownloadSelectedCommand = new AsyncRelayCommand(
+            DownloadSelectedAsync,
+            () => SelectedSearchResult is not null && !string.IsNullOrWhiteSpace(SelectedSearchResult.DownloadUrl) && !IsDownloading);
+        InstallSelectedDownloadCommand = new AsyncRelayCommand(
+            InstallSelectedDownloadAsync,
+            () => DownloadedDriver is not null && DownloadedDriver.ContainedInfs.Count > 0 && !IsInstalling);
+        OpenHpSupportCommand = new RelayCommand(_ => OpenBrowser(BuildHpSupportUrl(SearchKeyword)),
+            _ => !string.IsNullOrWhiteSpace(SearchKeyword));
+        OpenMicrosoftUpdateCatalogCommand = new RelayCommand(_ => OpenBrowser(BuildMsCatalogUrl(SearchKeyword)),
+            _ => !string.IsNullOrWhiteSpace(SearchKeyword));
+        ClearDownloadCommand = new RelayCommand(
+            _ => { DownloadedDriver = null; OnPropertyChanged(nameof(DownloadedDriver)); },
+            _ => DownloadedDriver is not null);
     }
 
     public async Task RefreshAsync()
@@ -349,5 +443,140 @@ public sealed class DriversViewModel : ObservableObject
         var stamped = $"{DateTime.Now:HH:mm:ss}  {line}";
         Log.Insert(0, stamped);
         if (Log.Count > 500) Log.RemoveAt(Log.Count - 1);
+    }
+
+    // ===== Search & download flow =====
+
+    private async Task SearchWindowsUpdateAsync()
+    {
+        if (IsSearching) return;
+        var keyword = SearchKeyword?.Trim();
+        if (string.IsNullOrEmpty(keyword)) return;
+        IsSearching = true;
+        SearchResults.Clear();
+        SelectedSearchResult = null;
+        DownloadedDriver = null;
+        try
+        {
+            SearchStatus = $"Searching Windows Update for '{keyword}'…";
+            var results = await _drivers.SearchWindowsUpdateAsync(keyword, null, CancellationToken.None);
+            foreach (var r in results) SearchResults.Add(r);
+            SearchStatus = results.Count == 0
+                ? $"No driver matches found on Windows Update for '{keyword}'. " +
+                  "Try 'Open HP support' for vendor-specific drivers, or paste a download URL."
+                : $"Found {results.Count} driver(s) on Windows Update.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "WUA search failed");
+            SearchStatus = $"Search failed: {ex.Message}";
+        }
+        finally { IsSearching = false; }
+    }
+
+    private async Task DownloadSelectedAsync()
+    {
+        if (IsDownloading) return;
+        if (SelectedSearchResult is null) return;
+
+        // WUA's IUpdate doesn't expose a direct DownloadUrl - we'd have to call
+        // IUpdateDownloader.Download() to put files in the WUA cache. We don't
+        // want that; we want a user-visible file path so they can install it.
+        // So we ask the user to paste a URL instead. This keeps things auditable.
+        var url = Microsoft.VisualBasic.Interaction.InputBox(
+            "Paste a direct download URL for this driver:",
+            "Download driver",
+            SelectedSearchResult.DownloadUrl ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        IsDownloading = true;
+        DownloadPercent = 0;
+        try
+        {
+            var progress = new Progress<(long Done, long Total, double Percent)>(p =>
+            {
+                DownloadPercent = p.Percent;
+            });
+            var fileName = $"{SelectedSearchResult.DriverManufacturer}-{SelectedSearchResult.DriverModel}-{SelectedSearchResult.DriverVersion}.zip"
+                .Replace(' ', '_');
+            var downloaded = await _drivers.DownloadFromUrlAsync(url, fileName, progress, CancellationToken.None);
+            DownloadedDriver = downloaded;
+            AppendLog($"[OK] downloaded {downloaded.FilePath} ({downloaded.SizeBytes:N0} bytes)");
+            if (downloaded.ContainedInfs.Count > 0)
+                AppendLog($"      contains {downloaded.ContainedInfs.Count} INF file(s) - ready to install");
+            else if (downloaded.IsContainer)
+                AppendLog($"      no .inf files found in container - try extracting manually");
+            else
+                AppendLog($"      direct file - INF install needs an .inf, not a {Path.GetExtension(downloaded.FilePath)}");
+            SearchStatus = $"Downloaded {Path.GetFileName(downloaded.FilePath)}";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Download failed");
+            SearchStatus = $"Download failed: {ex.Message}";
+            _dialog.ShowError("Download failed", ex);
+        }
+        finally { IsDownloading = false; }
+    }
+
+    private async Task InstallSelectedDownloadAsync()
+    {
+        if (DownloadedDriver is null || DownloadedDriver.ContainedInfs.Count == 0) return;
+        var firstInf = DownloadedDriver.ContainedInfs[0];
+        if (DownloadedDriver.ContainedInfs.Count > 1
+            && !_dialog.ConfirmDestructive(
+                "Multiple INFs found",
+                $"{DownloadedDriver.ContainedInfs.Count} INF files were found in the package:\n\n" +
+                string.Join("\n", DownloadedDriver.ContainedInfs.Select(p => "  • " + Path.GetFileName(p))) +
+                $"\n\nInstall '{Path.GetFileName(firstInf)}' now? You can install the rest manually from " +
+                "the Downloads folder if needed.",
+                "Install first INF"))
+            return;
+
+        IsInstalling = true;
+        InstallIsIndeterminate = true;
+        try
+        {
+            StatusMessage = $"Installing {Path.GetFileName(firstInf)} (admin UAC will appear)…";
+            var res = await _drivers.InstallFromInfAsync(firstInf, CancellationToken.None);
+            AppendLog($"[{(res.Success ? "OK" : "FAIL")}] add-driver {firstInf} exit={res.ExitCode}");
+            StatusMessage = res.Success
+                ? $"Installed {Path.GetFileName(firstInf)}"
+                : $"Install failed (exit {res.ExitCode}): {res.StdErr}";
+            if (!res.Success)
+                _dialog.ShowError("Install failed", $"exit={res.ExitCode}\n{res.StdErr}");
+            await RefreshAsync();
+        }
+        finally
+        {
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
+        }
+    }
+
+    private static string BuildHpSupportUrl(string? keyword) =>
+        string.IsNullOrWhiteSpace(keyword)
+            ? "https://support.hp.com/drivers"
+            : $"https://support.hp.com/drivers?pattern={Uri.EscapeDataString(keyword.Trim())}";
+
+    private static string BuildMsCatalogUrl(string? keyword) =>
+        string.IsNullOrWhiteSpace(keyword)
+            ? "https://catalog.update.microsoft.com/"
+            : $"https://catalog.update.microsoft.com/v7/site/Search.aspx?q={Uri.EscapeDataString(keyword.Trim())}";
+
+    private static void OpenBrowser(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception)
+        {
+            // best-effort: swallow - we already logged earlier
+        }
     }
 }
