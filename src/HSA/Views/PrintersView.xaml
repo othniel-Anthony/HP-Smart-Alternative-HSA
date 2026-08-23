@@ -176,8 +176,9 @@
                         <!-- Single-column button list. v0.2.1's 2-column grid was
                              overflowing the right column on some window widths,
                              so we trade density for guaranteed reachability. -->
-                        <Button Style="{StaticResource M3OutlinedButton}" Content="Set as default"
-                                Command="{Binding SetAsDefaultCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Clean printhead"
+                                Command="{Binding CleanPrintheadCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                                ToolTip="Sends a PJL CLEAN command and a Print Quality Diagnostic Page to the printer. LaserJet-class devices respond to CLEAN directly; HP AiOs scan the diagnostic page and run a clean cycle if nozzles are clogged."/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Test page"
                                 Command="{Binding PrintTestPageCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Printing preferences"

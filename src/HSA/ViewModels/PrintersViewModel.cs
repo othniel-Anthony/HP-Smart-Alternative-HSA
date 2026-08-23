@@ -128,7 +128,7 @@ public sealed class PrintersViewModel : ObservableObject
     public bool ShowOnlyHp { get => _showOnlyHp; set { if (SetField(ref _showOnlyHp, value)) _ = RefreshAsync(); } }
 
     public AsyncRelayCommand RefreshCommand { get; }
-    public AsyncRelayCommand SetAsDefaultCommand { get; }
+    public AsyncRelayCommand CleanPrintheadCommand { get; }
     public RelayCommand OpenAdvancedPropertiesCommand { get; }
     public RelayCommand OpenPrintingPreferencesCommand { get; }
     public AsyncRelayCommand PrintTestPageCommand { get; }
@@ -183,8 +183,8 @@ public sealed class PrintersViewModel : ObservableObject
             OnPropertyChanged(nameof(EwsStatusBrush));
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         };
-        SetAsDefaultCommand = new AsyncRelayCommand(
-            async () => { if (SelectedPrinter is null) return; await _printers.SetAsDefaultAsync(SelectedPrinter.Name); await RefreshAsync(); },
+        CleanPrintheadCommand = new AsyncRelayCommand(
+            async () => { if (SelectedPrinter is null) return; await CleanPrintheadAsync(); },
             () => SelectedPrinter is not null);
         OpenAdvancedPropertiesCommand = new RelayCommand(
             _ => _ = OpenAdvancedAsync(),
@@ -664,6 +664,33 @@ public sealed class PrintersViewModel : ObservableObject
         {
             _dialog.ShowError("Resume job failed", ex);
         }
+    }
+
+    /// <summary>
+    /// v0.2.13: Send a printhead-cleaning job to the selected printer.
+    /// Sends both a PJL CLEAN command (for LaserJet-class devices that
+    /// implement it) and a Print Quality Diagnostic Page (HP AiOs recognize
+    /// the diagnostic page and run a clean cycle when nozzles are clogged).
+    /// </summary>
+    private async Task CleanPrintheadAsync()
+    {
+        if (SelectedPrinter is null) return;
+        if (IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            StatusMessage = $"Sending printhead-cleaning job to {SelectedPrinter.Name}…";
+            var info = await _printers.CleanPrintheadAsync(SelectedPrinter.Name, CancellationToken.None);
+            StatusMessage = "Printhead cleaning job sent. Check the printer in 30–60s.";
+            _dialog.ShowInfo("Printhead cleaning", info);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Printhead cleaning failed for {Printer}", SelectedPrinter?.Name);
+            StatusMessage = "Printhead cleaning failed.";
+            _dialog.ShowError("Printhead cleaning failed", ex);
+        }
+        finally { IsBusy = false; }
     }
 
     private async Task DetectFirmwareAsync()

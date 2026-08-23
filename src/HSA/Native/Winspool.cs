@@ -281,6 +281,43 @@ internal static class Winspool
         IntPtr pDevModeInput,
         uint fMode);
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DOCINFOW
+    {
+        public int cbSize;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpszDocName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpszOutput;
+        [MarshalAs(UnmanagedType.LPWStr)] public string? lpszDatatype;
+        public uint fwType;
+    }
+
+    [DllImport(Dll, SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "StartDocPrinterW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool StartDocPrinter(
+        IntPtr hPrinter,
+        uint Level,
+        IntPtr pDocInfo);
+
+    [DllImport(Dll, SetLastError = true, EntryPoint = "EndDocPrinter")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport(Dll, SetLastError = true, EntryPoint = "StartPagePrinter")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport(Dll, SetLastError = true, EntryPoint = "EndPagePrinter")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport(Dll, SetLastError = true, EntryPoint = "WritePrinter")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool WritePrinter(
+        IntPtr hPrinter,
+        IntPtr pBuf,
+        uint cbBuf,
+        out uint pcWritten);
+
     public const uint DM_IN_BUFFER = 0x00000008;
     public const uint DM_OUT_BUFFER = 0x00000002;
     public const uint DM_IN_PROMPT = 0x00000004;

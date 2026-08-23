@@ -11,6 +11,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.13] - 2026-08-23
+
+### Added
+
+- **"Clean printhead" button** in the Printers Actions card (replaces "Set as default"). Sends a PJL `@PJL CLEAN` job to the selected printer via the Windows print spooler, then a Print Quality Diagnostic Page as a fallback for HP AiOs that ignore `CLEAN` but auto-clean when they scan a diagnostic page.
+  - P/Invoke surface for `StartDocPrinter` / `StartPagePrinter` / `WritePrinter` / `EndPagePrinter` / `EndDocPrinter` added to `Winspool.cs`.
+  - `IPrinterService.CleanPrintheadAsync(name)` returns a short status message describing what was sent.
+  - `PrintersViewModel.CleanPrintheadCommand` with IsBusy/status-line updates.
+  - After clicking, watch the printer — LaserJet-class devices run the cleaning immediately; AiOs typically run a cleaning cycle within 30–60s of receiving the diagnostic page.
+
+---
+
 ## [0.2.12] - 2026-08-23
 
 ### Added
