@@ -150,6 +150,64 @@ public partial class App : Application
         };
         main.Show();
         Log.Information("Main window shown (theme={Theme}).", theme.CurrentMode);
+
+        // v0.2.8: kick off a background EWS discovery for every HP printer that
+        // doesn't have a pinned URL yet. The first launch this is empty (nothing
+        // is pinned) so every HP printer gets discovered; on subsequent launches
+        // only new printers are probed. The discovered URLs are auto-pinned so
+        // future launches skip the discovery cost. Runs on a background thread
+        // so the UI stays responsive.
+        _ = Task.Run(() => AutoDiscoverAndPinEwsAsync(_services, settings));
+    }
+
+    /// <summary>
+    /// v0.2.8: for every HP printer without a pinned EWS URL, run discovery
+    /// (mDNS + UUID + subnet scan + IP-derive) and pin the result. Updates
+    /// the Printers tab's status message and a one-line summary so the user
+    /// knows what changed.
+    /// </summary>
+    private static async Task AutoDiscoverAndPinEwsAsync(
+        IServiceProvider sp, SettingsService settings)
+    {
+        try
+        {
+            var printers = sp.GetRequiredService<IPrinterService>();
+            var discovery = sp.GetRequiredService<EwsDiscoveryService>();
+            var pvm = sp.GetRequiredService<PrintersViewModel>();
+
+            var all = await printers.GetAllAsync();
+            var hp = all.Where(p => p.IsHp).ToList();
+            if (hp.Count == 0) return;
+
+            int pinned = 0, alreadySet = 0, noMatch = 0;
+            foreach (var p in hp)
+            {
+                // Don't re-discover printers that already have a pinned URL —
+                // the user might have set it manually to a URL discovery can't
+                // find (e.g. a printer on a different subnet). A "Re-scan EWS
+                // for all HP printers" button in the Printers tab is the escape
+                // hatch for that case.
+                if (settings.Current.EwsAddresses.TryGetValue(p.DeviceId, out var existing)
+                    && !string.IsNullOrWhiteSpace(existing))
+                {
+                    alreadySet++;
+                    continue;
+                }
+
+                var url = await discovery.DiscoverAsync(p, CancellationToken.None);
+                if (string.IsNullOrEmpty(url)) { noMatch++; continue; }
+                if (discovery.Pin(p, url)) pinned++;
+            }
+
+            var summary = $"Startup EWS scan: {pinned} new, {alreadySet} already pinned, {noMatch} no match (out of {hp.Count} HP printer(s)).";
+            Log.Information(summary);
+            // Show on the Printers tab so the user sees what happened.
+            await pvm.ReportStartupDiscoveryAsync(summary);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Startup EWS discovery failed");
+        }
     }
 
     /// <summary>

@@ -227,6 +227,9 @@
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Discover EWS"
                                 Command="{Binding DiscoverEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
                                 ToolTip="Auto-discover the printer's EWS URL by probing the IP, mDNS, and the WSD Port Monitor registry. Saves the result for future launches."/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Re-scan EWS for all HP printers"
+                                Command="{Binding RescanAllEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                                ToolTip="Re-run EWS discovery for every HP printer, overwriting any existing URLs. Use when a printer's IP has changed (DHCP / new subnet) or a new HP printer was added to the network."/>
                         <Button Style="{StaticResource M3TextButton}" Content="Set EWS URL…"
                                 Command="{Binding ConfigureEwsCommand}" HorizontalAlignment="Left"/>
 

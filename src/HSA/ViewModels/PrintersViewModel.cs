@@ -146,6 +146,7 @@ public sealed class PrintersViewModel : ObservableObject
     public RelayCommand OpenEwsCommand { get; }
     public RelayCommand ConfigureEwsCommand { get; }
     public AsyncRelayCommand DiscoverEwsCommand { get; }
+    public AsyncRelayCommand RescanAllEwsCommand { get; }
 
     public PrintersViewModel(
         IPrinterService printers,
@@ -280,6 +281,7 @@ public sealed class PrintersViewModel : ObservableObject
             _ => ConfigureEwsForSelected(),
             _ => SelectedPrinter is not null);
         DiscoverEwsCommand = new AsyncRelayCommand(DiscoverEwsForSelectedAsync, () => SelectedPrinter is not null);
+        RescanAllEwsCommand = new AsyncRelayCommand(RescanAllEwsAsync);
         OpenWindowsPrintersSettingsCommand = new RelayCommand(_ => _printers.OpenWindowsPrintersSettings());
     }
 
@@ -369,6 +371,76 @@ public sealed class PrintersViewModel : ObservableObject
             _dialog.ShowError("EWS discovery failed", ex);
         }
         finally { IsBusy = false; }
+    }
+
+    /// <summary>
+    /// v0.2.8: re-run discovery for every HP printer, overwriting any existing
+    /// pinned URL. Use this when the printer's IP has changed (router reboot,
+    /// DHCP lease, new subnet) or when a new HP printer has been added to the
+    /// network. Overwrites settings.json, so be sure the printer is actually
+    /// reachable before running this on a working config.
+    /// </summary>
+    private async Task RescanAllEwsAsync()
+    {
+        if (IsBusy) return;
+        var all = await _printers.GetAllAsync();
+        var hp = all.Where(p => p.IsHp).ToList();
+        if (hp.Count == 0)
+        {
+            _dialog.ShowInfo("No HP printers", "There are no HP printers to scan.");
+            return;
+        }
+        if (!_dialog.ConfirmDestructive("Re-scan EWS for all HP printers",
+            $"This will probe the network for every HP printer ({hp.Count}) and " +
+            "overwrite any existing EWS URL. Useful when a printer's IP has changed.\n\n" +
+            "Existing manual URLs will be replaced. Continue?",
+            "Re-scan"))
+            return;
+        IsBusy = true;
+        try
+        {
+            int pinned = 0, noMatch = 0;
+            foreach (var p in hp)
+            {
+                StatusMessage = $"Re-scanning {p.Name}…";
+                var url = await _ewsDiscovery.DiscoverAsync(p, CancellationToken.None);
+                if (string.IsNullOrEmpty(url)) { noMatch++; continue; }
+                if (_ewsDiscovery.Pin(p, url)) pinned++;
+            }
+            StatusMessage = $"Re-scan complete: {pinned} updated, {noMatch} no match (of {hp.Count}).";
+            _dialog.ShowInfo("EWS re-scan complete",
+                $"{pinned} URL(s) updated, {noMatch} printer(s) unreachable.\n\n" +
+                "Tip: if a printer shows 'no match', use 'Set EWS URL…' to enter one manually.");
+            // Force the EWS status of the currently selected printer to refresh
+            // (it may have just been re-pinned).
+            OnPropertyChanged(nameof(EwsStatusText));
+            OnPropertyChanged(nameof(EwsStatusShortText));
+            OnPropertyChanged(nameof(EwsUrlDisplay));
+            OnPropertyChanged(nameof(EwsStatusBrush));
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Bulk EWS re-scan failed");
+            _dialog.ShowError("Bulk EWS re-scan failed", ex);
+            StatusMessage = "Bulk EWS re-scan failed.";
+        }
+        finally { IsBusy = false; }
+    }
+
+    /// <summary>
+    /// Called by <c>App.AutoDiscoverAndPinEwsAsync</c> on launch with a one-line
+    /// summary of what happened. Updates the status line so the user sees what
+    /// changed. Runs on a non-UI thread; marshals via the Dispatcher.
+    /// </summary>
+    public Task ReportStartupDiscoveryAsync(string summary)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            StatusMessage = summary;
+            return Task.CompletedTask;
+        }
+        return dispatcher.InvokeAsync(() => StatusMessage = summary).Task as Task ?? Task.CompletedTask;
     }
 
     private async void ConfigureEwsForSelected()

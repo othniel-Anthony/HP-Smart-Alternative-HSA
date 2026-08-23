@@ -11,6 +11,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.8] - 2026-08-23
+
+### Added
+
+- **Auto-discover and pin EWS on launch.** The app now walks every HP printer on startup and runs the EWS discovery chain (pinned URL → `http://<ip>/` → mDNS by WSD Port Monitor UUID → guessed `.local` hostnames → /24 subnet scan) for any printer that doesn't already have a pinned URL. Discovered URLs are auto-pinned to `settings.json` so future launches skip the discovery cost. The Printers tab's status line shows a one-line summary like `"Startup EWS scan: 4 new, 0 already pinned, 1 no match (out of 5 HP printer(s))."` so you know what changed.
+- **"Re-scan EWS for all HP printers"** button in the Actions card. Overwrites every existing pinned URL with a fresh discovery. Use this when a printer's IP changed (DHCP lease, new subnet, new router) or a new HP printer joined the network. Confirms before overwriting.
+
+---
+
 ## [0.2.7] - 2026-08-23
 
 ### Fixed
