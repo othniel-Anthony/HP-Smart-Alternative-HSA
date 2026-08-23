@@ -107,15 +107,20 @@ public static class PnpUtil
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("@echo off");
+        // v0.2.6: classic cmd.exe gotcha — `%ERRORLEVEL%` is expanded at PARSE time,
+        // not after the command runs. So `pnputil /foo & echo %ERRORLEVEL%` always
+        // writes whatever ERRORLEVEL was BEFORE pnputil ran. Fix: enable delayed
+        // expansion and use `!ERRORLEVEL!` instead. Without this the rc.log file
+        // would be filled with garbage / stale values and every per-driver status
+        // would look like the prior command's outcome.
+        sb.AppendLine("setlocal enabledelayedexpansion");
         // Run each pnputil command. Capture stdout, stderr, and ERRORLEVEL.
         for (int i = 0; i < argList.Count; i++)
         {
             var arg = argList[i].Replace("\"", "\\\"");
             sb.AppendLine($"echo [hsa:line {i}] running: pnputil {arg}");
             sb.AppendLine($"pnputil {arg} 1>\"{stdoutLog}.{i}\" 2>\"{stderrLog}.{i}\"");
-            // Echo ERRORLEVEL right after the command — it's a known cmd.exe bug
-            // that %ERRORLEVEL% expands too early inside the same compound statement.
-            sb.AppendLine($"echo %ERRORLEVEL%>>\"{rcLog}\"");
+            sb.AppendLine($"echo !ERRORLEVEL!>>\"{rcLog}\"");
         }
         await File.WriteAllTextAsync(tempBat, sb.ToString(), ct);
 

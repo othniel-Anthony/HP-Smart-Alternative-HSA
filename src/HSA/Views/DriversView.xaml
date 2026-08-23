@@ -96,13 +96,17 @@
                             Command="{Binding ReinstallSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,12"
                             ToolTip="Re-adds the selected driver's INF to the store (pnputil /add-driver /install)"/>
 
-                    <!-- Removal (destructive) -->
+                    <!-- Removal (destructive). v0.2.6: prefer the ALL button — one
+                         UAC for every HP driver, instead of one UAC per click
+                         on the per-driver row. -->
                     <TextBlock Text="Removal" Style="{StaticResource TitleSmallText}"
                                Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,4,0,8"/>
-                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove selected driver"
-                            Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
-                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
-                            Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers  (1 UAC)"
+                            Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                            ToolTip="Removes every HP driver package in one elevated cmd.exe run — you only see one UAC prompt."/>
+                    <Button Style="{StaticResource M3OutlinedButton}" Content="Remove only the selected driver"
+                            Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                            ToolTip="Removes just the highlighted driver. Still triggers its own UAC prompt — use the ALL button above for batch removal."/>
 
                     <!-- Full registry cleanup toggle -->
                     <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,12"

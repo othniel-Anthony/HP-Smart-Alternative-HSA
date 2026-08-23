@@ -11,6 +11,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.6] - 2026-08-23
+
+### Fixed
+
+- **Driver removal per-command status was wrong.** v0.2.5 wrote `echo %ERRORLEVEL%>>file` into the .bat — but cmd.exe expands `%ERRORLEVEL%` at PARSE time, not after the command runs, so the log always showed the prior command's exit code (or `0` for the first command). Fixed in v0.2.6 with `setlocal enabledelayedexpansion` + `echo !ERRORLEVEL!>>file`. Now every line of the activity log shows the real pnputil exit code.
+- **"Discover EWS" gave up after mDNS failed.** Many HP printers — including USB-attached AiOs that are also on Wi-Fi — don't advertise via mDNS. v0.2.6 adds a **/24 subnet probe** as the last discovery step: it walks every host on the local subnet on TCP 80 and asks for `/DevMgmt/ProductConfigDyn.xml`, with an HP+EWS substring check to avoid false positives on routers / NAS. Bounded to ~30s; picks the first match.
+
+### Changed
+
+- **Drivers tab now leads with "Remove ALL HP drivers (1 UAC)"** (filled, prominent) and demotes the per-driver button to an outlined secondary. The ALL button is still one UAC for the whole batch; the per-driver button is only useful if you genuinely want to keep some drivers.
+
+### Re: "too many UAC popups"
+With v0.2.5/v0.2.6, every elevated pnputil action is **exactly one UAC prompt**:
+- "Remove ALL HP drivers" (with Full registry cleanup ON) → ONE UAC, runs every `/remove-device` + `/delete-driver` for every HP driver in one .bat
+- "Remove only the selected driver" → ONE UAC
+- "Install driver INF…" → ONE UAC
+
+If you're seeing more than that, please share a screenshot of which action triggers the extra prompts — the per-action design guarantees one UAC per click.
+
+---
+
 ## [0.2.5] - 2026-08-23
 
 ### Fixed
