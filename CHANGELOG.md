@@ -11,6 +11,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.9] - 2026-08-23
+
+### Fixed
+
+- **Subnet scan false-positived on the router** (v0.2.6 introduced this). The v0.2.6 `LooksLikeHpEws` body check accepted any body containing the substring `"HP "`, so the user's router at `http://192.168.1.1/` — whose admin page happened to contain "HP" — got auto-pinned as a printer's EWS URL. The fetch then returned 404 for `/DevMgmt/ConsumableConfigDyn.xml` and every consumables query for that printer came back empty ("Unknown"). v0.2.9 tightens the check: we now require one of `/DevMgmt/`, `Embedded Web Server`, `hp/device/`, `hp_ews`, or `HP EWS` in the body. A bare `"HP"` is no longer enough.
+
+### Note
+- If your `settings.json` already has a bad pin (e.g. `http://192.168.1.1` pointing at a router), the launch-time "auto-discover for un-pinned printers" path won't fix it (it skips printers that have any pin). Use **"Re-scan EWS for all HP printers"** in the Actions card, or **"Set EWS URL…"**, to overwrite.
+
+---
+
 ## [0.2.8] - 2026-08-23
 
 ### Added

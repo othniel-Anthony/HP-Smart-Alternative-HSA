@@ -266,16 +266,21 @@ public sealed class EwsDiscoveryService
     private static bool LooksLikeHpEws(string body, PrinterInfo printer)
     {
         if (string.IsNullOrEmpty(body)) return false;
-        // The EWS home page contains a "Manufacturer: HP" or "Hewlett-Packard"
-        // string and a model number block. We don't try to parse it; a substring
-        // match for HP + a model keyword is enough to avoid false positives.
-        var hasHp = body.Contains("Hewlett-Packard", StringComparison.OrdinalIgnoreCase)
-                 || body.Contains("HP ", StringComparison.OrdinalIgnoreCase)
-                 || body.Contains("\"HP\"", StringComparison.OrdinalIgnoreCase);
-        if (!hasHp) return false;
-        // Loose model match: any whitespace-separated token of length >= 3
-        // from the printer's name or model that also appears in the body. This
-        // catches e.g. "OfficeJet" and "Pro" without being too strict.
+        // v0.2.9: the v0.2.6 substring check was too loose — it matched on
+        // generic "HP " in router admin pages, e.g. the user had a pin
+        // auto-set to http://192.168.1.1 because their router's HTML
+        // contained "HP" (some ISP gateways do). Now we require a positive
+        // /DevMgmt/ EWS signature in the body. An HP EWS home page always
+        // contains at least one of these markers; routers don't.
+        var isHpEws =
+            body.Contains("/DevMgmt/", StringComparison.OrdinalIgnoreCase) ||
+            body.Contains("Embedded Web Server", StringComparison.OrdinalIgnoreCase) ||
+            body.Contains("hp/device/", StringComparison.OrdinalIgnoreCase) ||
+            body.Contains("hp_ews", StringComparison.OrdinalIgnoreCase) ||
+            body.Contains("HP EWS", StringComparison.OrdinalIgnoreCase);
+        if (!isHpEws) return false;
+        // Still prefer an exact model match when we can — many HP printers
+        // return their model name in the EWS title or product block.
         var name = (printer.Name ?? string.Empty) + " " + (printer.Model ?? string.Empty);
         foreach (var token in name.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -283,9 +288,9 @@ public sealed class EwsDiscoveryService
             if (body.Contains(token, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
-        // Fallback: any "EWS" / "Embedded Web Server" mention + HP is enough.
-        return body.Contains("Embedded Web Server", StringComparison.OrdinalIgnoreCase)
-            || body.Contains("/DevMgmt/", StringComparison.OrdinalIgnoreCase);
+        // Fallback: any other HP-specific marker was enough. We don't accept
+        // a bare "HP" anymore — that was the v0.2.6 false-positive source.
+        return body.Contains("Hewlett-Packard", StringComparison.OrdinalIgnoreCase);
     }
 
     private static System.Net.IPAddress? LocalIPv4()
