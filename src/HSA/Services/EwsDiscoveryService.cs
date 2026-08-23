@@ -29,12 +29,18 @@ public sealed class EwsDiscoveryService
 {
     private readonly EwsService _ews;
     private readonly SettingsService _settings;
+    private readonly PrinterEndpointDiscovery _endpoint;
     private readonly ILogger<EwsDiscoveryService> _log;
 
-    public EwsDiscoveryService(EwsService ews, SettingsService settings, ILogger<EwsDiscoveryService> log)
+    public EwsDiscoveryService(
+        EwsService ews,
+        SettingsService settings,
+        PrinterEndpointDiscovery endpoint,
+        ILogger<EwsDiscoveryService> log)
     {
         _ews = ews;
         _settings = settings;
+        _endpoint = endpoint;
         _log = log;
     }
 
@@ -84,12 +90,33 @@ public sealed class EwsDiscoveryService
             _log.LogDebug(ex, "mDNS EWS discovery failed for {Printer}", printer.Name);
         }
 
-        // 4) Subnet scan. Many HP printers (especially AiOs that are also on Wi-Fi)
-        // don't advertise via mDNS but DO respond on TCP 80. Probing /DevMgmt/
-        // ProductConfigDyn.xml is the fastest tell: a real EWS returns a 200 with
-        // a few hundred bytes of XML; anything else either rejects the connection
-        // (closed port) or returns a non-2xx (different service). Limited to the
-        // local /24 by default to keep it under ~5s; override via `maxHosts`.
+        // 4) mDNS browse with name matching. The previous code tried
+        //    `<uuid>.local` (which only works if the printer advertises
+        //    that UUID) and a few guessed names (which almost never
+        //    matched real mDNS names). v0.2.10 instead browses
+        //    `_ipp._tcp.local` and matches the resulting instance names
+        //    against the target printer's name tokens — way more reliable
+        //    for HP printers that do advertise mDNS (most modern AiOs do).
+        try
+        {
+            var byMdns = await DiscoverByMdnsNameAsync(printer, ct);
+            if (byMdns is not null)
+            {
+                _log.LogInformation("EWS discovery for {Printer}: matched by mDNS {Url}", printer.Name, byMdns);
+                return byMdns;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "mDNS-by-name EWS discovery failed for {Printer}", printer.Name);
+        }
+
+        // 5) Subnet scan. Many HP printers (especially AiOs that are also on Wi-Fi)
+        // don't advertise via mDNS but DO respond on TCP 80. v0.2.10 makes this
+        // name-aware: candidates are scored by how many of the printer's name
+        // tokens appear in the response body, so if you have multiple HP
+        // printers on the network the scan picks the one whose EWS page actually
+        // mentions "OfficeJet" and "9730", not just any HP EWS.
         try
         {
             var subnetted = await ScanLocalSubnetForEwsAsync(printer, ct);
@@ -200,14 +227,56 @@ public sealed class EwsDiscoveryService
     }
 
     /// <summary>
+    /// v0.2.10: browses `_ipp._tcp.local` via mDNS and matches each discovered
+    /// instance name against the target printer's name tokens. The mDNS name
+    /// is what the printer actually broadcasts (e.g. "HP OfficeJet Pro 9730
+    /// series [20A523]") so matching against the spooler name is reliable.
+    /// Returns the URL of the best-matching instance, or null.
+    /// </summary>
+    private async Task<string?> DiscoverByMdnsNameAsync(PrinterInfo printer, CancellationToken ct)
+    {
+        var tokens = ExtractNameTokens(printer);
+        if (tokens.Count == 0) return null;
+        try
+        {
+            // Reuse the existing mDNS browse implementation.
+            var discovered = await _endpoint.BrowseAsync(ct);
+            if (discovered is null || discovered.Count == 0) return null;
+
+            (string Name, string Url, int Score)? best = null;
+            foreach (var d in discovered)
+            {
+                if (string.IsNullOrEmpty(d.IpAddress)) continue;
+                var score = ScoreMatch(d.Name + " " + d.IppUrl, tokens);
+                if (score > 0 && (best is null || score > best.Value.Score))
+                {
+                    var url = $"http://{d.IpAddress}/";
+                    best = (d.Name, url, score);
+                }
+            }
+            if (best is not null)
+            {
+                _log.LogInformation("mDNS-by-name: matched {Name} -> {Url} (score {Score}, tokens {Tokens})",
+                    best.Value.Name, best.Value.Url, best.Value.Score, string.Join(",", tokens));
+                return best.Value.Url;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "mDNS-by-name browse failed for {Printer}", printer.Name);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Last-resort discovery: probe every host in the local /24 on TCP 80 and
-    /// ask it for /DevMgmt/ProductConfigDyn.xml. A real HP EWS returns 200 with
-    /// a few hundred bytes of XML. We further check the response body for an HP
-    /// make/model so we don't false-positive on a router or NAS web UI.
+    /// score each response by how many of the printer's name tokens appear in
+    /// the EWS body. v0.2.10 is name-aware: if your 9730 lives on the network,
+    /// its EWS home page will contain "OfficeJet" and "9730" and that's how
+    /// we pick it out of every other HP EWS that might be on the same subnet.
     ///
-    /// ~250 probes at 200ms each = ~50s worst case. The probe times out fast
-    /// (300ms connect timeout) so most non-printer IPs return immediately with
-    /// "connection refused" or "timeout", which is cheap.
+    /// ~250 probes at 300ms each = ~30s worst case. The connect times out fast
+    /// for non-printer IPs (closed port or no response) so most are cheap.
     /// </summary>
     private async Task<string?> ScanLocalSubnetForEwsAsync(PrinterInfo printer, CancellationToken ct)
     {
@@ -218,14 +287,13 @@ public sealed class EwsDiscoveryService
             return null;
         }
         var prefix = localIp.GetAddressBytes();
-        // /24 only — covers typical home/SOHO networks. Larger subnets would
-        // need a CIDR from the user.
         var subnet = $"{prefix[0]}.{prefix[1]}.{prefix[2]}";
-        _log.LogInformation("Subnet scan: probing {Subnet}.0/24 for {Printer}", subnet, printer.Name);
+        var tokens = ExtractNameTokens(printer);
+        _log.LogInformation("Subnet scan: probing {Subnet}.0/24 for {Printer} (tokens: {Tokens})",
+            subnet, printer.Name, string.Join(",", tokens));
 
-        // Probe in parallel (limited concurrency) so a /24 takes a few seconds
-        // rather than 50s sequentially.
-        var candidates = new System.Collections.Concurrent.ConcurrentBag<string>();
+        // Candidates with a score; the highest-scoring URL wins.
+        var candidates = new System.Collections.Concurrent.ConcurrentBag<(string Url, int Score, string Reason)>();
         var tasks = Enumerable.Range(1, 254).Select(i => Task.Run(async () =>
         {
             ct.ThrowIfCancellationRequested();
@@ -238,59 +306,101 @@ public sealed class EwsDiscoveryService
                 var connect = tcp.ConnectAsync(ip, 80);
                 var completed = await Task.WhenAny(connect, Task.Delay(300, ct));
                 if (completed != connect || !tcp.Connected) return;
-                // Cheap body check: GET / and look for "HP" + "Embedded" or "EWS".
-                // We don't try /DevMgmt/ProductConfigDyn.xml first because the
-                // printer's home page is shorter and equally diagnostic.
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
                 var resp = await http.GetAsync(url, ct);
                 if (!resp.IsSuccessStatusCode) return;
                 var body = await resp.Content.ReadAsStringAsync(ct);
-                if (LooksLikeHpEws(body, printer))
+                if (!LooksLikeHpEws(body)) return;
+                // EWS confirmed; now score against the printer's name tokens.
+                var score = ScoreMatch(body, tokens);
+                if (tokens.Count == 0)
                 {
-                    _log.LogInformation("Subnet scan: HP EWS match at {Url}", url);
-                    candidates.Add(url);
+                    // No usable tokens (e.g. the spooler name was just a hardware ID
+                    // with no model info). Fall back to accepting any HP EWS so the
+                    // user at least has something to click.
+                    score = 1;
                 }
+                candidates.Add((url, score, $"name tokens matched"));
+                _log.LogInformation("Subnet scan: HP EWS at {Url}, score {Score}", url, score);
             }
             catch { /* closed port / timeout / DNS — keep scanning */ }
         }, ct)).ToList();
 
-        // Bound the whole scan to ~30s; if we find a candidate earlier we'll
-        // still let the rest finish in the background but return promptly.
         try { await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30), ct); }
         catch (OperationCanceledException) { throw; }
         catch { /* timeout — fine, we may have a candidate already */ }
 
-        return candidates.FirstOrDefault();
+        if (candidates.IsEmpty) return null;
+        return candidates.OrderByDescending(c => c.Score).First().Url;
     }
 
-    private static bool LooksLikeHpEws(string body, PrinterInfo printer)
+    private static bool LooksLikeHpEws(string body)
     {
         if (string.IsNullOrEmpty(body)) return false;
-        // v0.2.9: the v0.2.6 substring check was too loose — it matched on
-        // generic "HP " in router admin pages, e.g. the user had a pin
-        // auto-set to http://192.168.1.1 because their router's HTML
-        // contained "HP" (some ISP gateways do). Now we require a positive
-        // /DevMgmt/ EWS signature in the body. An HP EWS home page always
-        // contains at least one of these markers; routers don't.
-        var isHpEws =
-            body.Contains("/DevMgmt/", StringComparison.OrdinalIgnoreCase) ||
-            body.Contains("Embedded Web Server", StringComparison.OrdinalIgnoreCase) ||
-            body.Contains("hp/device/", StringComparison.OrdinalIgnoreCase) ||
-            body.Contains("hp_ews", StringComparison.OrdinalIgnoreCase) ||
-            body.Contains("HP EWS", StringComparison.OrdinalIgnoreCase);
-        if (!isHpEws) return false;
-        // Still prefer an exact model match when we can — many HP printers
-        // return their model name in the EWS title or product block.
+        // v0.2.9+: require a positive /DevMgmt/ EWS signature. Bare "HP" is not
+        // enough — that was the v0.2.6 false-positive source (router admin pages).
+        return body.Contains("/DevMgmt/", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("Embedded Web Server", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("hp/device/", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("hp_ews", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("HP EWS", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Pulls the meaningful identifying tokens out of the printer's spooler
+    /// name and model. Strips common filler ("HP", "series", "All-in-One"),
+    /// the brand prefix, and very short or all-numeric tokens. The remaining
+    /// tokens are used both for mDNS name matching and for scoring the
+    /// subnet scan — "OfficeJet", "Pro", "9730" survive, "HP" and "series"
+    /// don't.
+    /// </summary>
+    public static List<string> ExtractNameTokens(PrinterInfo printer)
+    {
         var name = (printer.Name ?? string.Empty) + " " + (printer.Model ?? string.Empty);
-        foreach (var token in name.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+        // Filler that would match too many printers.
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
+            "HP", "series", "Series", "the", "and", "for", "printer", "printers",
+            "all-in-one", "All-in-One", "AIO", "laserjet", "LaserJet", "officejet", "OfficeJet",
+            // "OfficeJet" / "LaserJet" are HP family names — they appear in EVERY
+            // OfficeJet / LaserJet's EWS, so they're not useful as a unique
+            // fingerprint. But we keep the model number / suffix.
+        };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var out2 = new List<string>();
+        foreach (var raw in name.Split(new[] { ' ', '\t', '-', '_', '(', ')' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var token = raw.Trim(',', '.', ';', ':');
             if (token.Length < 3) continue;
-            if (body.Contains(token, StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (stop.Contains(token)) continue;
+            // Skip tokens that are JUST a brand prefix like "HPI02082C" — those
+            // are the spooler's hardware IDs, not the human-readable name. We
+            // only filter if the token starts with a known brand prefix and has
+            // no alphabetic characters beyond the brand.
+            if (token.StartsWith("HPI", StringComparison.OrdinalIgnoreCase)
+                && token.Length > 3
+                && !token.Any(char.IsLetter) == false  // has at least one letter
+                && !token.Substring(3).Any(char.IsLetter))
+            {
+                // looks like HPI02082C — skip
+                continue;
+            }
+            if (seen.Add(token)) out2.Add(token);
         }
-        // Fallback: any other HP-specific marker was enough. We don't accept
-        // a bare "HP" anymore — that was the v0.2.6 false-positive source.
-        return body.Contains("Hewlett-Packard", StringComparison.OrdinalIgnoreCase);
+        return out2;
+    }
+
+    /// <summary>Counts how many of the printer's name tokens appear in <paramref name="haystack"/>.</summary>
+    public static int ScoreMatch(string haystack, IReadOnlyCollection<string> tokens)
+    {
+        if (string.IsNullOrEmpty(haystack) || tokens.Count == 0) return 0;
+        int score = 0;
+        foreach (var t in tokens)
+        {
+            if (haystack.Contains(t, StringComparison.OrdinalIgnoreCase))
+                score++;
+        }
+        return score;
     }
 
     private static System.Net.IPAddress? LocalIPv4()

@@ -11,6 +11,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.10] - 2026-08-23
+
+### Changed
+
+- **EWS discovery is now name-aware end-to-end.** v0.2.10 tokenizes the printer's spooler name + model into a list of meaningful identifiers ("OfficeJet", "Pro", "9730", "4650", "20A523"…) and uses them to score every candidate.
+  - **mDNS browse** — each `_ipp._tcp.local` instance name is scored against the target's tokens; the highest-scoring match wins instead of just taking the first result.
+  - **Subnet scan** — every HP EWS found in the /24 is now scored by how many of the printer's tokens appear in the response body. The candidate with the highest score wins. With multiple HP printers on the same subnet, this lets the scan pick the right one (e.g. an OfficeJet 4650 doesn't false-positive on a 9730 scan because "9730" won't appear in the 4650's EWS body).
+  - **Stop-word filter** — `HP`, `series`, `All-in-One`, `LaserJet`, `OfficeJet` are excluded from the token list so they don't dilute the score (every OfficeJet has "OfficeJet" in its EWS body; using it as a fingerprint would always match every OfficeJet equally).
+- For your 9730 the tokens are `Pro` and `9730`. The 4650's EWS body has neither, so the 9730's scan will specifically prefer a printer that mentions "9730" in its home page.
+
+---
+
 ## [0.2.9] - 2026-08-23
 
 ### Fixed
