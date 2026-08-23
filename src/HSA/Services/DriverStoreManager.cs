@@ -83,8 +83,8 @@ public sealed class DriverStoreManager
                 deviceRemovals.Add(new PnpDeviceRemoval(
                     InstanceId: line.Args.Contains('"') ? ExtractInstanceId(line.Args) : "(unknown)",
                     Success: line.Success,
-                    ExitCode: line.Success ? 0 : 1,
-                    Error: line.Success ? null : line.Error));
+                    ExitCode: line.ExitCode,
+                    Error: line.Success ? null : (line.Error ?? $"pnputil exit code {line.ExitCode}")));
             }
             var deleteLine = deleteIdx < result.Lines.Count ? result.Lines[deleteIdx] : null;
             outcomes.Add(new RegistryCleanupResult
@@ -95,7 +95,9 @@ public sealed class DriverStoreManager
                 DriverPackageRemoved = deleteLine?.Success ?? false,
                 DriverPackageError   = (deleteLine is null)
                     ? "no result from batched pnputil"
-                    : (deleteLine.Success ? null : deleteLine.Error)
+                    : (deleteLine.Success
+                        ? null
+                        : (deleteLine.Error ?? $"pnputil exit code {deleteLine.ExitCode}"))
             });
         }
         return outcomes;

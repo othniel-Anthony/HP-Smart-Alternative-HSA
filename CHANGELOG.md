@@ -11,6 +11,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.5] - 2026-08-23
+
+### Fixed
+
+- **"HP driver removal fails" / "Delete all drivers does nothing"** — root cause: `PnpUtil.RunAsync` was using `UseShellExecute = false, Verb = "runas"`, but MSDN documents that **`Verb` is silently ignored when `UseShellExecute` is false**. So per-driver removal never triggered a UAC prompt, pnputil ran unelevated, and the operation failed with "Access is denied" — the user saw nothing happen. The batched path (`RunBatchAsync`) used the correct `UseShellExecute = true` setting and did work, but the legacy "Remove ALL HP drivers" non-cleanup path also used the broken per-driver loop.
+- v0.2.5 routes every pnputil call through `RunBatchAsync`, so **every driver removal now triggers exactly one UAC prompt**, regardless of which button you click.
+- Per-line exit codes are now captured properly. v0.2.0–v0.2.4 used "stderr empty == success", which gave false positives when pnputil wrote informational messages to stderr. v0.2.5 writes `ERRORLEVEL` to a file from the .bat script and reads it back per-command, so the activity log now shows accurate per-driver status.
+
+### Changed
+- `DriverService.RemoveAllHpAsync` (the legacy non-cleanup path) also routes through the batched mechanism now — previously it would have triggered one UAC per driver (had the per-driver UAC actually worked).
+
+---
+
 ## [0.2.4] - 2026-08-23
 
 ### Fixed

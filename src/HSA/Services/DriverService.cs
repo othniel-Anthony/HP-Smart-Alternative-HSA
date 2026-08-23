@@ -124,18 +124,30 @@ public sealed class DriverService : IDriverService
         CancellationToken ct = default)
     {
         var hp = (await GetAllAsync(true, ct)).ToList();
+        if (hp.Count == 0) return Array.Empty<(DriverInfo, CommandResult)>();
+
+        _log.LogInformation("Starting batched removal of {Count} HP driver packages (single UAC)", hp.Count);
+
+        // v0.2.5: route through the same batched / single-UAC mechanism the
+        // registry-cleanup path uses. The old loop would trigger one UAC per
+        // driver (and the underlying per-call UAC didn't even fire because of
+        // the UseShellExecute=false bug). Now the whole batch is one UAC.
+        var argList = hp.Select(d => $"/delete-driver {d.PublishedName} /force").ToList();
+        var batch = await PnpUtil.RunBatchAsync(argList, ct);
+
         var results = new List<(DriverInfo, CommandResult)>(hp.Count);
-
-        _log.LogInformation("Starting bulk removal of {Count} HP driver packages", hp.Count);
-
         for (int i = 0; i < hp.Count; i++)
         {
             var d = hp[i];
-            ct.ThrowIfCancellationRequested();
             progress?.Report((i, hp.Count, d.OriginalName));
-
-            // Always force: the user explicitly asked to clean ALL HP drivers.
-            var res = await RemoveAsync(d, force: true, ct);
+            // The batched runner reports approximate success (stderr empty).
+            // We pass that through so the UI can show per-driver status; the
+            // exact exit codes are still in ERRORLEVEL inside cmd.exe and
+            // could be exposed in a future iteration.
+            var line = i < batch.Lines.Count ? batch.Lines[i] : null;
+            var res = line is null
+                ? new CommandResult(-1, "", "no result from batched pnputil")
+                : new CommandResult(line.Success ? 0 : 1, line.StdOut, line.Error ?? "");
             results.Add((d, res));
         }
         progress?.Report((hp.Count, hp.Count, string.Empty));

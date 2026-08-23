@@ -99,20 +99,24 @@ public static class PnpUtil
         var tempBat = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-{Guid.NewGuid():N}.bat");
         var stdoutLog = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-stdout-{Guid.NewGuid():N}.log");
         var stderrLog = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-stderr-{Guid.NewGuid():N}.log");
+        // v0.2.5: also write the per-line ERRORLEVEL to a file so the parent can
+        // distinguish a real pnputil failure from a benign stderr warning. The
+        // previous implementation used "stderr empty == success" which gave false
+        // positives/negatives when pnputil wrote informational messages to stderr.
+        var rcLog = Path.Combine(Path.GetTempPath(), $"hsa-pnputil-rc-{Guid.NewGuid():N}.log");
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("@echo off");
-        sb.AppendLine($"set HSA_EXIT=0");
-        // Run each pnputil command. We capture stdout/stderr to per-line logs by
-        // prefixing with the index so we can split them back out afterwards.
+        // Run each pnputil command. Capture stdout, stderr, and ERRORLEVEL.
         for (int i = 0; i < argList.Count; i++)
         {
             var arg = argList[i].Replace("\"", "\\\"");
             sb.AppendLine($"echo [hsa:line {i}] running: pnputil {arg}");
             sb.AppendLine($"pnputil {arg} 1>\"{stdoutLog}.{i}\" 2>\"{stderrLog}.{i}\"");
-            sb.AppendLine($"set RC{i}=%ERRORLEVEL%");
+            // Echo ERRORLEVEL right after the command — it's a known cmd.exe bug
+            // that %ERRORLEVEL% expands too early inside the same compound statement.
+            sb.AppendLine($"echo %ERRORLEVEL%>>\"{rcLog}\"");
         }
-        sb.AppendLine($"echo [hsa:line done] all commands finished");
         await File.WriteAllTextAsync(tempBat, sb.ToString(), ct);
 
         try
@@ -133,14 +137,23 @@ public static class PnpUtil
                 return new BatchResult(-1, "", "Failed to start elevated cmd.exe", new List<BatchLine>());
             await proc.WaitForExitAsync(ct);
 
+            // Read per-line exit codes (one integer per line, in order).
+            var rcLines = File.Exists(rcLog)
+                ? await File.ReadAllLinesAsync(rcLog, ct)
+                : Array.Empty<string>();
+            var rcs = new int[rcLines.Length];
+            for (int i = 0; i < rcLines.Length; i++)
+                rcs[i] = int.TryParse(rcLines[i].Trim(), out var n) ? n : -1;
+
             // Reconstruct combined output and per-command status.
             var perLine = new List<BatchLine>(argList.Count);
-            var combined = new System.Text.StringBuilder();
             for (int i = 0; i < argList.Count; i++)
             {
                 var so = File.Exists($"{stdoutLog}.{i}") ? File.ReadAllText($"{stdoutLog}.{i}") : "";
                 var se = File.Exists($"{stderrLog}.{i}") ? File.ReadAllText($"{stderrLog}.{i}") : "";
-                perLine.Add(new BatchLine(i, argList[i], string.IsNullOrWhiteSpace(se), se, so));
+                var rc = i < rcs.Length ? rcs[i] : -1;
+                var success = rc == 0;
+                perLine.Add(new BatchLine(i, argList[i], success, string.IsNullOrWhiteSpace(se) ? null : se, so, rc));
             }
             return new BatchResult(proc.ExitCode, string.Empty, string.Empty, perLine);
         }
@@ -155,27 +168,26 @@ public static class PnpUtil
             }
             try { File.Delete(stdoutLog); } catch { }
             try { File.Delete(stderrLog); } catch { }
+            try { File.Delete(rcLog); } catch { }
         }
     }
 
     private static async Task<CommandResult> RunAsync(string args, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = Exe,
-            Arguments = args,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            Verb = "runas" // request elevation; will trigger UAC
-        };
-        using var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        proc.Start();
-        var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await proc.StandardError.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-        return new CommandResult(proc.ExitCode, stdout, stderr);
+        // v0.2.5: previously used UseShellExecute=false + Verb=runas, which MSDN says
+        // IGNORES the Verb (the UAC prompt is only honored when UseShellExecute=true).
+        // That meant per-driver removal silently ran unelevated and failed with
+        // "Access is denied" without ever showing a UAC prompt. Now we route through
+        // the same batched pattern as RunBatchAsync: a one-command .bat script,
+        // spawned via cmd.exe with UseShellExecute=true + Verb=runas. The temp
+        // .bat redirects stdout/stderr to per-call files and writes ERRORLEVEL to
+        // a third file, so the per-driver caller still gets the exact exit code.
+        var batch = await RunBatchAsync(new[] { args }, ct);
+        var line = batch.Lines.Count > 0 ? batch.Lines[0] : null;
+        return new CommandResult(
+            ExitCode: line?.ExitCode ?? -1,
+            StdOut: line?.StdOut ?? string.Empty,
+            StdErr: line?.Error ?? string.Empty);
     }
 
     /// <summary>
@@ -272,4 +284,5 @@ public sealed record BatchLine(
     string Args,
     bool Success,
     string? Error,
-    string StdOut);
+    string StdOut,
+    int ExitCode);
