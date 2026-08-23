@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.15] - 2026-08-23
+
+### Fixed
+
+- **Hotfix: app crashed on launch in v0.2.14.** When adding `TestPageService` to the DI registrations in `App.xaml.cs`, the `IFirmwareService` line was accidentally removed. The DI container then couldn't construct `PrintersViewModel` (which needs `IFirmwareService` for `DetectFirmwareCommand`) and threw `Unable to resolve service for type 'IFirmwareService'`. Restored the line.
+
+---
+
 ## [0.2.14] - 2026-08-23
 
 ### Added

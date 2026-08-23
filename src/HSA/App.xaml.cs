@@ -116,6 +116,7 @@ public partial class App : Application
         sc.AddSingleton<WindowsUpdateClient>();
         sc.AddSingleton<DriverDownloader>();
         sc.AddSingleton<IDriverService, DriverService>();
+        sc.AddSingleton<IFirmwareService, FirmwareService>();
         sc.AddSingleton<TestPageService>();
         sc.AddSingleton<IppConsumableSource>();
         sc.AddSingleton<WsdPrintConsumableSource>();
