@@ -141,10 +141,14 @@ public sealed class PrinterEndpointDiscovery
             if (i + 4 > payload.Length) return;
             i += 4;
         }
+        // v0.2.12: also collect TXT records per instance name so we can
+        // surface uuid / serial / adminurl to the EWS matcher.
+        var txtByInstance = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         // Walk answers + additionals. We extract:
         //  - PTR records (gives us the service instance name)
         //  - SRV records (gives us host + port for the instance)
         //  - A/AAAA records (gives us the IP for the host)
+        //  - TXT records (gives us uuid / serial / adminurl for matching)
         // Real mDNS requires a follow-up query to resolve additional records; for
         // a single-packet browse we'll opportunistically link any A/AAAA records
         // we see in the same packet. This is good enough for the typical case
@@ -184,6 +188,15 @@ public sealed class PrinterEndpointDiscovery
                 Array.Copy(payload, i, bytes, 0, 16);
                 aByHost[StripTrailingDot(rname)] = new IPAddress(bytes);
             }
+            else if (type == 16 && rdlen > 0) // TXT
+            {
+                // v0.2.12: TXT records carry the printer's mDNS UUID,
+                // serial, MAC and admin URL. The admin URL is often the
+                // EWS base URL directly (`adminurl=http://192.168.1.99/`).
+                var txt = ParseTxtRecord(payload, i, rdlen);
+                if (!string.IsNullOrEmpty(txt))
+                    txtByInstance[StripTrailingDot(rname)] = txt;
+            }
             i += rdlen;
         }
 
@@ -196,11 +209,17 @@ public sealed class PrinterEndpointDiscovery
             {
                 if (aByHost.TryGetValue(srv.host, out var ip))
                 {
+                    var txt = txtByInstance.TryGetValue(inst, out var t) ? t : null;
+                    var fields = ParseTxtFields(txt);
                     sink.Add(new DiscoveredNetworkPrinter(
                         Name: inst,
                         IpAddress: ip.ToString(),
                         Port: srv.port,
-                        IppUrl: $"ipp://{ip}:{srv.port}/ipp/print"));
+                        IppUrl: $"ipp://{ip}:{srv.port}/ipp/print",
+                        Uuid: fields.uuid,
+                        Serial: fields.serial,
+                        Mac: fields.mac,
+                        RawTxt: txt));
                     continue;
                 }
             }
@@ -223,6 +242,61 @@ public sealed class PrinterEndpointDiscovery
     }
 
     private static string StripTrailingDot(string s) => s.EndsWith('.') ? s[..^1] : s;
+
+    /// <summary>
+    /// Decodes a TXT RDATA blob into a single string with all key=value pairs
+    /// (joined by ' '). RFC 6763 says each TXT record is one or more
+    /// length-prefixed character-strings; an IPP printer typically uses a
+    /// single string with all pairs separated by spaces.
+    /// </summary>
+    private static string ParseTxtRecord(byte[] payload, int off, int rdlen)
+    {
+        if (rdlen <= 0 || off + rdlen > payload.Length) return string.Empty;
+        var sb = new System.Text.StringBuilder(rdlen);
+        int end = off + rdlen;
+        while (off < end)
+        {
+            int len = payload[off];
+            if (off + 1 + len > end) break;
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(System.Text.Encoding.UTF8.GetString(payload, off + 1, len));
+            off += 1 + len;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Pulls the fields HSA uses for matching: <c>uuid</c> (WSD UUID, matches
+    /// the WSD Port Monitor's per-port <c>Printer UUID</c>), <c>serial</c>
+    /// (matches the USB iSerial when we can read it), and <c>mac</c>.
+    /// </summary>
+    internal static (string? uuid, string? serial, string? mac) ParseTxtFields(string? txt)
+    {
+        if (string.IsNullOrEmpty(txt)) return (null, null, null);
+        string? uuid = null, serial = null, mac = null;
+        foreach (var token in txt.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = token.IndexOf('=');
+            if (eq <= 0) continue;
+            var key = token[..eq];
+            var value = token[(eq + 1)..];
+            // Unwrap the urn:uuid: prefix that IPP/WSD printers use.
+            if (key.Equals("uuid", StringComparison.OrdinalIgnoreCase))
+            {
+                uuid = value.StartsWith("urn:uuid:", StringComparison.OrdinalIgnoreCase)
+                    ? value[9..] : value;
+            }
+            else if (key.Equals("serial", StringComparison.OrdinalIgnoreCase))
+            {
+                serial = value;
+            }
+            else if (key.Equals("mac", StringComparison.OrdinalIgnoreCase))
+            {
+                mac = value;
+            }
+        }
+        return (uuid, serial, mac);
+    }
 
     /// <summary>
     /// Discovers the WSD-Print XAddr for a WSD-USB printer. Reads the device's UUID
@@ -346,7 +420,7 @@ public sealed class PrinterEndpointDiscovery
 
     // --- Minimal DNS / mDNS encoding ---
 
-    private enum DnsRecordType : ushort { A = 1, AAAA = 28, PTR = 12 }
+    private enum DnsRecordType : ushort { A = 1, AAAA = 28, PTR = 12, TXT = 16, SRV = 33 }
 
     private static byte[] BuildDnsQuery(string name, DnsRecordType type)
     {

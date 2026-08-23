@@ -11,6 +11,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.12] - 2026-08-23
+
+### Added
+
+- **mDNS TXT record matching for WSD-UUID → IP correlation.** When a WSD-USB printer also advertises over the network (which is the common case for HP AiOs that are on Wi-Fi), the mDNS browse now reads the printer's TXT record and extracts the `uuid`, `serial`, and `mac` fields. The EWS discovery chain then:
+  1. Reads the printer's WSD Port Monitor UUID from the registry (we already do this).
+  2. Browses `_ipp._tcp.local` and matches each result's `uuid=` TXT field against the registry UUID.
+  3. If matched, returns the mDNS-discovered IP — no subnet scan or guessing needed.
+  This is the same idea you suggested as "Method 3" (USB serial + mDNS match) but uses the WSD UUID as the fingerprint instead of a USB iSerial. UUIDs are already published by both transports, so the cross-reference is reliable.
+
+### Changed
+- `DiscoveredNetworkPrinter` now carries `Uuid`, `Serial`, `Mac`, and `RawTxt` fields populated from the mDNS TXT record.
+- `EwsDiscoveryService.GetWsdPortUuid` is now public so callers (and the self-healing path) can use it as a fingerprint.
+- Removed the redundant "guessed mDNS names" loop — v0.2.10's browse-based name match is strictly better.
+
+---
+
+## [0.2.11] - 2026-08-23
+
+### Added
+
+- **Self-healing launch-time EWS scan.** v0.2.8's startup auto-discovery only ran for un-pinned printers and never questioned existing pins. v0.2.11 verifies every pin by fetching the EWS home page and checking it looks like a real HP EWS. If verification fails (e.g. the printer's IP changed and the old URL now points at a dead host), the pin is re-discovered and overwritten. If re-discovery finds nothing, the stale pin is kept and a warning is logged so the user knows.
+- **`EwsService.FetchTextAsync`** — public text-fetch helper used by the verifier.
+- **`EwsDiscoveryService.DiscoverAsync(printer, ct, ignorePin)`** — new flag so the self-healing path can re-discover instead of just returning the same broken URL.
+
+### Note
+- The verifier only checks "is this URL still a real HP EWS?" — not "is it the right printer?" The name-token check is for the subnet scan only (EWS home pages often don't contain the model name in the HTML body, only in JS variables).
+
+---
+
 ## [0.2.10] - 2026-08-23
 
 ### Changed

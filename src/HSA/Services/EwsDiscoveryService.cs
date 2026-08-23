@@ -76,31 +76,8 @@ public sealed class EwsDiscoveryService
             }
         }
 
-        // 3) mDNS browse for IPP/HTTP services, match by name.
-        try
-        {
-            var discovered = await BrowseLocalNetworkForEwsAsync(printer, ct);
-            if (discovered is not null)
-            {
-                if (await _ews.ProbeAsync(discovered, ct))
-                {
-                    _log.LogInformation("EWS discovery for {Printer}: matched by mDNS {Url}", printer.Name, discovered);
-                    return discovered;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.LogDebug(ex, "mDNS EWS discovery failed for {Printer}", printer.Name);
-        }
-
-        // 4) mDNS browse with name matching. The previous code tried
-        //    `<uuid>.local` (which only works if the printer advertises
-        //    that UUID) and a few guessed names (which almost never
-        //    matched real mDNS names). v0.2.10 instead browses
-        //    `_ipp._tcp.local` and matches the resulting instance names
-        //    against the target printer's name tokens — way more reliable
-        //    for HP printers that do advertise mDNS (most modern AiOs do).
+        // 3) mDNS browse with WSD-UUID / name matching (v0.2.10 + v0.2.12).
+        //    See DiscoverByMdnsNameAsync for details.
         try
         {
             var byMdns = await DiscoverByMdnsNameAsync(printer, ct);
@@ -112,10 +89,10 @@ public sealed class EwsDiscoveryService
         }
         catch (Exception ex)
         {
-            _log.LogDebug(ex, "mDNS-by-name EWS discovery failed for {Printer}", printer.Name);
+            _log.LogDebug(ex, "mDNS EWS discovery failed for {Printer}", printer.Name);
         }
 
-        // 5) Subnet scan. Many HP printers (especially AiOs that are also on Wi-Fi)
+        // 4) Subnet scan. Many HP printers (especially AiOs that are also on Wi-Fi)
         // don't advertise via mDNS but DO respond on TCP 80. v0.2.10 makes this
         // name-aware: candidates are scored by how many of the printer's name
         // tokens appear in the response body, so if you have multiple HP
@@ -200,10 +177,22 @@ public sealed class EwsDiscoveryService
         return null;
     }
 
-    private static string? TryGetWsdPortUuid(PrinterInfo printer)
+    private static string? TryGetWsdPortUuid(PrinterInfo printer) => GetWsdPortUuid(printer);
+
+    /// <summary>
+    /// v0.2.12: read the WSD Port Monitor's per-port <c>Printer UUID</c> for
+    /// this printer. This is the unique UUID the printer advertises via
+    /// mDNS/WSD-Print; matching it against an mDNS browse result that
+    /// includes the printer's TXT record gives us a high-confidence link
+    /// between the USB-attached spooler queue and the printer's network IP.
+    /// Public so <c>App.AutoDiscoverAndPinEwsAsync</c> and other callers
+    /// can use it as a fingerprint.
+    /// </summary>
+    public static string? GetWsdPortUuid(PrinterInfo printer)
     {
         try
         {
+            if (printer is null) return null;
             if (!printer.PortName.StartsWith("WSD-", StringComparison.OrdinalIgnoreCase)) return null;
             using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
                 $@"SYSTEM\CurrentControlSet\Control\Print\Monitors\WSD Port\Ports\{printer.PortName}");
@@ -231,38 +220,62 @@ public sealed class EwsDiscoveryService
     }
 
     /// <summary>
-    /// v0.2.10: browses `_ipp._tcp.local` via mDNS and matches each discovered
-    /// instance name against the target printer's name tokens. The mDNS name
-    /// is what the printer actually broadcasts (e.g. "HP OfficeJet Pro 9730
-    /// series [20A523]") so matching against the spooler name is reliable.
+    /// v0.2.12: browses `_ipp._tcp.local` and matches results in this order:
+    ///   1. **WSD UUID match** — the printer's WSD Port Monitor UUID (read
+    ///      from the registry) is the unique id the same device advertises
+    ///      via mDNS. A UUID match is the highest-confidence way to link the
+    ///      USB-attached spooler queue to a network addressable printer.
+    ///   2. **Name-token match** — fall back to scoring by name overlap, the
+    ///      v0.2.10 behavior.
     /// Returns the URL of the best-matching instance, or null.
     /// </summary>
     private async Task<string?> DiscoverByMdnsNameAsync(PrinterInfo printer, CancellationToken ct)
     {
-        var tokens = ExtractNameTokens(printer);
-        if (tokens.Count == 0) return null;
         try
         {
-            // Reuse the existing mDNS browse implementation.
             var discovered = await _endpoint.BrowseAsync(ct);
             if (discovered is null || discovered.Count == 0) return null;
 
-            (string Name, string Url, int Score)? best = null;
-            foreach (var d in discovered)
+            // Pass 1: WSD UUID match. v0.2.12 captures the TXT record so we
+            // can compare the printer's WSD UUID to the UUID the same
+            // device broadcasts over mDNS.
+            var wsdUuid = GetWsdPortUuid(printer);
+            if (!string.IsNullOrEmpty(wsdUuid))
             {
-                if (string.IsNullOrEmpty(d.IpAddress)) continue;
-                var score = ScoreMatch(d.Name + " " + d.IppUrl, tokens);
-                if (score > 0 && (best is null || score > best.Value.Score))
+                foreach (var d in discovered)
                 {
-                    var url = $"http://{d.IpAddress}/";
-                    best = (d.Name, url, score);
+                    if (string.IsNullOrEmpty(d.Uuid)) continue;
+                    if (string.Equals(d.Uuid, wsdUuid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var url = $"http://{d.IpAddress}/";
+                        _log.LogInformation("mDNS UUID match: {Printer} -> {Name} @ {Url} (uuid={Uuid})",
+                            printer.Name, d.Name, url, wsdUuid);
+                        return url;
+                    }
                 }
             }
-            if (best is not null)
+
+            // Pass 2: name-token match.
+            var tokens = ExtractNameTokens(printer);
+            if (tokens.Count > 0)
             {
-                _log.LogInformation("mDNS-by-name: matched {Name} -> {Url} (score {Score}, tokens {Tokens})",
-                    best.Value.Name, best.Value.Url, best.Value.Score, string.Join(",", tokens));
-                return best.Value.Url;
+                (string Name, string Url, int Score)? best = null;
+                foreach (var d in discovered)
+                {
+                    if (string.IsNullOrEmpty(d.IpAddress)) continue;
+                    var score = ScoreMatch(d.Name + " " + d.IppUrl, tokens);
+                    if (score > 0 && (best is null || score > best.Value.Score))
+                    {
+                        var url = $"http://{d.IpAddress}/";
+                        best = (d.Name, url, score);
+                    }
+                }
+                if (best is not null)
+                {
+                    _log.LogInformation("mDNS-by-name: matched {Name} -> {Url} (score {Score}, tokens {Tokens})",
+                        best.Value.Name, best.Value.Url, best.Value.Score, string.Join(",", tokens));
+                    return best.Value.Url;
+                }
             }
         }
         catch (Exception ex)
