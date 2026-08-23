@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+using System.IO;
+using System.Runtime.InteropServices;
 using HSA.Models;
 using HSA.Native;
 using Microsoft.Extensions.Logging;
@@ -19,6 +20,15 @@ public interface IPrinterService
     Task OpenAdvancedPropertiesAsync(string name, IntPtr hwndOwner);
     Task OpenPrintingPreferencesAsync(string name, IntPtr hwndOwner);
     Task PrintTestPageAsync(string name, CancellationToken ct = default);
+    /// <summary>
+    /// Sends a file (typically a PDF) to the named printer via the
+    /// Windows shell "printto" verb. The system invokes the user's
+    /// default handler for the file type — for PDFs that's usually
+    /// Edge, Acrobat, or SumatraPDF — which renders the document and
+    /// sends it to the printer. Use this to print the bundled
+    /// color-test-page PDF.
+    /// </summary>
+    Task PrintFileAsync(string name, string filePath, CancellationToken ct = default);
     /// <summary>
     /// Sends a printhead-cleaning job to the printer via the Windows print
     /// spooler. Uses PJL's <c>@PJL CLEAN</c> (for LaserJet-class devices that
@@ -274,6 +284,51 @@ public sealed class PrinterService : IPrinterService
                 UseShellExecute = true
             };
             System.Diagnostics.Process.Start(psi);
+        }, ct);
+    }
+
+    public Task PrintFileAsync(string name, string filePath, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Printer name is required.", nameof(name));
+        if (string.IsNullOrWhiteSpace(filePath)) throw new ArgumentException("File path is required.", nameof(filePath));
+        if (!File.Exists(filePath)) throw new FileNotFoundException("File not found.", filePath);
+        return Task.Run(() =>
+        {
+            // v0.2.14: print to a specific printer using the shell's
+            // "printto" verb. Windows invokes the registered handler for
+            // the file's type (PDF → Edge / Acrobat / SumatraPDF) which
+            // renders the document and sends it to the named printer.
+            // The handler exits when the job is queued; the user sees the
+            // printer in "Printing" state immediately.
+            //
+            // Verb=printto requires UseShellExecute=true and the printer
+            // name as the Arguments string. Wrap in quotes so printer
+            // names with spaces don't break the command.
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = filePath,
+                Verb = "printto",
+                Arguments = $"\"{name}\"",
+                UseShellExecute = true
+            };
+            try
+            {
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p is null)
+                {
+                    _log.LogWarning("PrintFileAsync: no process was started for {File} -> {Printer}", filePath, name);
+                }
+                else
+                {
+                    _log.LogInformation("PrintFileAsync: started {File} -> {Printer} (PID {Pid})",
+                        filePath, name, p.Id);
+                }
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                _log.LogError(ex, "PrintFileAsync: shell failed for {File} -> {Printer}", filePath, name);
+                throw;
+            }
         }, ct);
     }
 

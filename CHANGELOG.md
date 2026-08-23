@@ -11,6 +11,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.14] - 2026-08-23
+
+### Added
+
+- **Bundled HP color-test-page PDF as the "Test page" output.** The `print-color-test-page-basic-1.pdf` is now embedded as an assembly resource (`HSA.Resources.test-page.pdf`) and extracted to `%LOCALAPPDATA%\HSA\test-page.pdf` on first run. The "Test page" button now sends this PDF to the selected printer via the Windows shell `printto` verb — your default PDF handler (Edge, Acrobat, etc.) renders the document and ships it to the printer. Status bar shows "Color-test page sent to {Printer}." on success.
+  - New `TestPageService` extracts the embedded resource on demand.
+  - New `IPrinterService.PrintFileAsync(name, filePath)` for shell-verb printing to a specific printer.
+  - Fallback: if the embedded resource is missing, "Test page" still triggers the Windows built-in test page via `printui.dll`.
+
+---
+
 ## [0.2.13] - 2026-08-23
 
 ### Added

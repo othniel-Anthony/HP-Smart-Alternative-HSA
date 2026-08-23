@@ -10,10 +10,10 @@
     <AssemblyName>HSA</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
-    <Version>0.2.13</Version>
-    <AssemblyVersion>0.2.13.0</AssemblyVersion>
-    <FileVersion>0.2.13.0</FileVersion>
-    <InformationalVersion>0.2.13</InformationalVersion>
+    <Version>0.2.14</Version>
+    <AssemblyVersion>0.2.14.0</AssemblyVersion>
+    <FileVersion>0.2.14.0</FileVersion>
+    <InformationalVersion>0.2.14</InformationalVersion>
     <Authors>Circuit &amp; Ink</Authors>
     <Product>HSA</Product>
     <Description>A Windows utility to manage HP printers, drivers, and firmware without HP Smart.</Description>
@@ -51,6 +51,16 @@
     <Resource Include="Resources\printers\envy.png" />
     <Resource Include="Resources\printers\smart-tank.png" />
     <Resource Include="Resources\printers\generic.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- v0.2.14: bundled PDF used as the default "Test print" page. The
+         Test page button sends this to the selected printer via the
+         Windows shell `printto` verb, which uses the user's default
+         PDF handler. -->
+    <EmbeddedResource Include="Resources\test-page.pdf">
+      <LogicalName>HSA.Resources.test-page.pdf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

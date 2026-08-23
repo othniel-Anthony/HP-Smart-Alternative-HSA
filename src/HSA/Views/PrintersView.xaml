@@ -180,7 +180,8 @@
                                 Command="{Binding CleanPrintheadCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
                                 ToolTip="Sends a PJL CLEAN command and a Print Quality Diagnostic Page to the printer. LaserJet-class devices respond to CLEAN directly; HP AiOs scan the diagnostic page and run a clean cycle if nozzles are clogged."/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Test page"
-                                Command="{Binding PrintTestPageCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                                Command="{Binding PrintTestPageCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                                ToolTip="Sends the bundled HP color-test-page PDF to the selected printer via the Windows shell 'printto' verb. Use this to check color accuracy, alignment, and overall print quality."/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Printing preferences"
                                 Command="{Binding OpenPrintingPreferencesCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Advanced properties"

@@ -13,6 +13,7 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IDriverService _drivers;
     private readonly IFirmwareService _firmware;
     private readonly IModelImageService _modelImages;
+    private readonly TestPageService _testPage;
     private readonly IConsumableService _consumables;
     private readonly PrinterEndpointDiscovery _discovery;
     private readonly EwsService _ews;
@@ -159,6 +160,7 @@ public sealed class PrintersViewModel : ObservableObject
         EwsDiscoveryService ewsDiscovery,
         SettingsService settings,
         IDialogService dialog,
+        TestPageService testPage,
         ILogger<PrintersViewModel> log)
     {
         _printers = printers;
@@ -171,6 +173,7 @@ public sealed class PrintersViewModel : ObservableObject
         _ewsDiscovery = ewsDiscovery;
         _settings = settings;
         _dialog = dialog;
+        _testPage = testPage;
         _log = log;
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
@@ -193,7 +196,30 @@ public sealed class PrintersViewModel : ObservableObject
             _ => _ = OpenPreferencesAsync(),
             _ => SelectedPrinter is not null);
         PrintTestPageCommand = new AsyncRelayCommand(
-            async () => { if (SelectedPrinter is not null) await _printers.PrintTestPageAsync(SelectedPrinter.Name); },
+            async () =>
+            {
+                if (SelectedPrinter is null) return;
+                var path = _testPage.GetTestPagePath();
+                if (path is null)
+                {
+                    // Bundled resource is missing — fall back to the
+                    // Windows test page so the user still gets *something*.
+                    await _printers.PrintTestPageAsync(SelectedPrinter.Name);
+                    return;
+                }
+                try
+                {
+                    StatusMessage = $"Sending color-test PDF to {SelectedPrinter.Name}…";
+                    await _printers.PrintFileAsync(SelectedPrinter.Name, path);
+                    StatusMessage = $"Color-test page sent to {SelectedPrinter.Name}.";
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError(ex, "Color-test print failed for {Printer}", SelectedPrinter.Name);
+                    StatusMessage = "Color-test print failed.";
+                    _dialog.ShowError("Color-test print failed", ex);
+                }
+            },
             () => SelectedPrinter is not null);
         PauseQueueCommand = new AsyncRelayCommand(
             async () => { if (SelectedPrinter is not null) { await _printers.PauseQueueAsync(SelectedPrinter.Name); await RefreshAsync(); } },
