@@ -60,6 +60,171 @@ public sealed class PrinterEndpointDiscovery
     }
 
     /// <summary>
+    /// Discovers all network printers advertising IPP or _printer._tcp via mDNS.
+    /// Returns a list of <see cref="DiscoveredNetworkPrinter"/> with name, IP, port
+    /// and IPP URL. Callers can offer these to the user to add to the spooler.
+    /// Browses both _ipp._tcp.local and _printer._tcp.local and dedupes by IP+port.
+    /// Browses 1.5s per service; total ~3s in the worst case.
+    /// </summary>
+    public async Task<IReadOnlyList<DiscoveredNetworkPrinter>> BrowseAsync(
+        CancellationToken ct = default,
+        TimeSpan? timeout = null)
+    {
+        var perServiceTimeout = timeout ?? TimeSpan.FromMilliseconds(1500);
+        var all = new Dictionary<(string ip, int port), DiscoveredNetworkPrinter>();
+        foreach (var svc in new[] { "_ipp._tcp", "_printer._tcp" })
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var results = await BrowseServiceAsync(svc, perServiceTimeout, ct);
+                foreach (var r in results)
+                {
+                    var key = (r.IpAddress, r.Port);
+                    all[key] = r;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogDebug(ex, "mDNS browse for {Svc} failed", svc);
+            }
+        }
+        return all.Values.OrderBy(p => p.Name).ToList();
+    }
+
+    private async Task<IReadOnlyList<DiscoveredNetworkPrinter>> BrowseServiceAsync(
+        string service, TimeSpan timeout, CancellationToken ct)
+    {
+        try
+        {
+            var query = BuildDnsQuery($"{service}.local", DnsRecordType.PTR);
+            using var udp = new UdpClient();
+            udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 4);
+            udp.Client.ReceiveTimeout = (int)timeout.TotalMilliseconds;
+            await udp.SendAsync(query, query.Length, new IPEndPoint(IPAddress.Parse("224.0.0.251"), 5353));
+
+            var results = new List<DiscoveredNetworkPrinter>();
+            var seenInstanceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var deadline = DateTime.UtcNow + timeout;
+            // Accumulate responses; parse each as it arrives.
+            while (DateTime.UtcNow < deadline)
+            {
+                var remaining = deadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero) break;
+                try
+                {
+                    var result = await udp.ReceiveAsync().WaitAsync(remaining, ct);
+                    TryParseBrowseResponse(result.Buffer, results, seenInstanceNames);
+                }
+                catch (TimeoutException) { break; }
+                catch (OperationCanceledException) { break; }
+            }
+            return results;
+        }
+        catch
+        {
+            return Array.Empty<DiscoveredNetworkPrinter>();
+        }
+    }
+
+    private static void TryParseBrowseResponse(
+        byte[] payload, List<DiscoveredNetworkPrinter> sink, HashSet<string> seenInstances)
+    {
+        if (payload.Length < 12) return;
+        int anCount = (payload[6] << 8) | payload[7];
+        int qd = (payload[4] << 8) | payload[5];
+        int i = 12;
+        // Skip question section
+        for (int q = 0; q < qd; q++)
+        {
+            i = SkipDnsName(payload, i);
+            if (i + 4 > payload.Length) return;
+            i += 4;
+        }
+        // Walk answers + additionals. We extract:
+        //  - PTR records (gives us the service instance name)
+        //  - SRV records (gives us host + port for the instance)
+        //  - A/AAAA records (gives us the IP for the host)
+        // Real mDNS requires a follow-up query to resolve additional records; for
+        // a single-packet browse we'll opportunistically link any A/AAAA records
+        // we see in the same packet. This is good enough for the typical case
+        // where the device's response includes its own address records.
+        var ptrNames = new List<string>();
+        var srvByInstance = new Dictionary<string, (string host, int port)>(StringComparer.OrdinalIgnoreCase);
+        var aByHost = new Dictionary<string, IPAddress>(StringComparer.OrdinalIgnoreCase);
+        for (int a = 0; a < anCount; a++)
+        {
+            int nameStart = i;
+            i = SkipDnsName(payload, i);
+            if (i + 10 > payload.Length) return;
+            ushort type = (ushort)((payload[i] << 8) | payload[i + 1]);
+            int rdlen = (payload[i + 8] << 8) | payload[i + 9];
+            i += 10;
+            string rname = ExtractDnsName(payload, nameStart);
+            if (type == 12 && rdlen > 0) // PTR
+            {
+                string target = ExtractDnsName(payload, i);
+                ptrNames.Add(target);
+            }
+            else if (type == 33 && rdlen > 0) // SRV
+            {
+                // SRV: priority(2) weight(2) port(2) target
+                int port = (payload[i + 4] << 8) | payload[i + 5];
+                string target = ExtractDnsName(payload, i + 6);
+                srvByInstance[StripTrailingDot(rname)] = (StripTrailingDot(target), port);
+            }
+            else if (type == 1 && rdlen == 4) // A
+            {
+                var ip = new IPAddress(new[] { payload[i], payload[i + 1], payload[i + 2], payload[i + 3] });
+                aByHost[StripTrailingDot(rname)] = ip;
+            }
+            else if (type == 28 && rdlen == 16) // AAAA
+            {
+                var bytes = new byte[16];
+                Array.Copy(payload, i, bytes, 0, 16);
+                aByHost[StripTrailingDot(rname)] = new IPAddress(bytes);
+            }
+            i += rdlen;
+        }
+
+        foreach (var instance in ptrNames)
+        {
+            var inst = StripTrailingDot(instance);
+            if (!seenInstances.Add(inst)) continue;
+            // Try to resolve via SRV + A records
+            if (srvByInstance.TryGetValue(inst, out var srv))
+            {
+                if (aByHost.TryGetValue(srv.host, out var ip))
+                {
+                    sink.Add(new DiscoveredNetworkPrinter(
+                        Name: inst,
+                        IpAddress: ip.ToString(),
+                        Port: srv.port,
+                        IppUrl: $"ipp://{ip}:{srv.port}/ipp/print"));
+                    continue;
+                }
+            }
+            // Fallback: try to find any A/AAAA for a host that ends with the instance's
+            // first label. This is a weak match but better than nothing.
+            var firstLabel = inst.Split('.')[0];
+            foreach (var kv in aByHost)
+            {
+                if (kv.Key.StartsWith(firstLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    sink.Add(new DiscoveredNetworkPrinter(
+                        Name: inst,
+                        IpAddress: kv.Value.ToString(),
+                        Port: 631,
+                        IppUrl: $"ipp://{kv.Value}:631/ipp/print"));
+                    break;
+                }
+            }
+        }
+    }
+
+    private static string StripTrailingDot(string s) => s.EndsWith('.') ? s[..^1] : s;
+
+    /// <summary>
     /// Discovers the WSD-Print XAddr for a WSD-USB printer. Reads the device's UUID
     /// from the WSD Port Monitor's port config and constructs the canonical XAddr
     /// (http://&lt;uuid&gt;/PrintService). The WSD Port Monitor's SpoolerApi or

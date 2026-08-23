@@ -179,12 +179,131 @@ public sealed class IppClient
     }
 
     /// <summary>
-    /// v2 placeholder. PWG 5100.11 specifies an Update operation in /system that accepts a firmware
-    /// file URL. The protocol is standardized and does NOT bypass any signing.
+    /// PWG 5100.11 Update-Operation. Sends an IPP Update-Operation (operation-id
+    /// 0x0027) that asks the printer to fetch a firmware file from the given URL
+    /// and apply it. The protocol is standardized and does NOT bypass any signing
+    /// (the printer verifies the firmware signature itself).
+    ///
+    /// Returns the IPP status code from the printer:
+    ///   0x0000 = successful-ok
+    ///   0x0500..0x05FF = server-error (e.g. 0x0501 not-authorized, 0x0504 device-error)
+    /// Returns -1 if the IPP request itself fails (network, parse, etc.).
     /// </summary>
-    public Task<bool> TryUpdateFirmwareAsync(string printerUri, Uri firmwareFileUri, CancellationToken ct = default)
+    public async Task<int> UpdateFirmwareAsync(
+        string printerUri, Uri firmwareFileUri, string documentFormat = "application/octet-stream",
+        CancellationToken ct = default)
     {
-        return Task.FromResult(false);
+        try
+        {
+            var uri = new Uri(printerUri);
+            using var tcp = new TcpClient();
+            await tcp.ConnectAsync(uri.Host, uri.IsDefaultPort ? DefaultIppPort : uri.Port, ct);
+            tcp.SendTimeout = (int)_timeout.TotalMilliseconds;
+            tcp.ReceiveTimeout = (int)_timeout.TotalMilliseconds;
+            await using var stream = tcp.GetStream();
+
+            var body = BuildUpdateFirmwareRequest(printerUri, firmwareFileUri.AbsoluteUri, documentFormat);
+            var request =
+                $"POST {uri.PathAndQuery} HTTP/1.1\r\n" +
+                $"Host: {uri.Host}\r\n" +
+                "Content-Type: application/ipp\r\n" +
+                $"Content-Length: {body.Length}\r\n" +
+                "Expect:\r\n" +
+                "Connection: close\r\n\r\n";
+            var headBytes = Encoding.ASCII.GetBytes(request);
+            await stream.WriteAsync(headBytes, ct);
+            await stream.WriteAsync(body, ct);
+            await stream.FlushAsync(ct);
+
+            // Read response: header + IPP body
+            using var ms = new MemoryStream();
+            var headerBytes = new MemoryStream();
+            int contentLength = -1;
+            var headerDone = false;
+            var buf = new byte[4096];
+            int read;
+            while ((read = await stream.ReadAsync(buf, ct)) > 0)
+            {
+                if (!headerDone)
+                {
+                    headerBytes.Write(buf, 0, read);
+                    var headerData = headerBytes.ToArray();
+                    var sep = Encoding.ASCII.GetBytes("\r\n\r\n");
+                    var idx = IndexOf(headerData, sep);
+                    if (idx >= 0)
+                    {
+                        var headerText = Encoding.ASCII.GetString(headerData, 0, idx);
+                        foreach (var line in headerText.Split("\r\n"))
+                        {
+                            if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                                _ = int.TryParse(line.Substring(15).Trim(), out contentLength);
+                        }
+                        headerDone = true;
+                        var leftover = headerData.Length - (idx + 4);
+                        if (leftover > 0) ms.Write(headerData, idx + 4, leftover);
+                        if (contentLength >= 0 && ms.Length >= contentLength) break;
+                    }
+                }
+                else
+                {
+                    ms.Write(buf, 0, read);
+                    if (contentLength >= 0 && ms.Length >= contentLength) break;
+                }
+            }
+            if (ms.Length < 4) return -1;
+            // IPP response: first two bytes are version (we don't care), next two are status-code.
+            var resp = ms.ToArray();
+            return (resp[2] << 8) | resp[3];
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    private static byte[] BuildUpdateFirmwareRequest(string printerUri, string firmwareFileUri, string documentFormat)
+    {
+        using var op = new MemoryStream();
+        op.WriteByte(0x01); // operation-attributes-tag
+        WriteDelimiter(op, 0x47, "attributes-charset");
+        WriteValue(op, 0x47, "utf-8");
+        WriteDelimiter(op, 0x48, "attributes-natural-language");
+        WriteValue(op, 0x48, "en");
+        WriteDelimiter(op, 0x45, "printer-uri");
+        WriteValue(op, 0x45, printerUri);
+        WriteDelimiter(op, 0x42, "requesting-user-name");
+        WriteValue(op, 0x42, Environment.UserName);
+        // PWG 5100.11 Update-Operation attributes:
+        //  - "document-uri"  (0x45 uri): URL of the firmware file the printer should fetch
+        //  - "document-format"  (0x49 mimeMediaType): MIME type of the firmware
+        WriteDelimiter(op, 0x45, "document-uri");
+        WriteValue(op, 0x45, firmwareFileUri);
+        WriteDelimiter(op, 0x49, "document-format");
+        WriteValue(op, 0x49, documentFormat);
+        op.WriteByte(0x03); // end-of-attributes-tag
+
+        var opBytes = op.ToArray();
+        var request = new byte[8 + opBytes.Length];
+        // IPP 2.0
+        request[0] = 0x02; request[1] = 0x00;
+        // Update-Operation = 0x0027 (PWG 5100.11)
+        request[2] = 0x00; request[3] = 0x27;
+        // request-id 1
+        request[4] = 0x00; request[5] = 0x00; request[6] = 0x00; request[7] = 0x01;
+        Buffer.BlockCopy(opBytes, 0, request, 8, opBytes.Length);
+        return request;
+    }
+
+    /// <summary>Quick reachability check for an IPP endpoint.</summary>
+    public static async Task<bool> IsReachableAsync(string printerUri, int timeoutMs = 2000, CancellationToken ct = default)
+    {
+        try
+        {
+            var uri = new Uri(printerUri);
+            return await IsReachableAsync(IPAddress.Parse(uri.Host),
+                uri.IsDefaultPort ? DefaultIppPort : uri.Port, timeoutMs, ct);
+        }
+        catch { return false; }
     }
 }
 

@@ -7,9 +7,72 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Planned
-- PWG 5100.11 IPP System Services firmware push (where supported by the printer)
-- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB) — required to read consumables from WSD-USB printers
-- Network printer auto-discovery (mDNS / WS-Discovery)
+- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB) — required to read consumables from WSD-USB printers. Not shipped in v0.2.0; see Known limitation.
+
+---
+
+## [0.2.0] - 2026-08-23
+
+### Removed — "Search & download drivers" card
+The v0.1.x "Search & download drivers" card (Windows Update search + browser
+shortcuts + paste-URL download + install-first-INF) is gone. The Quick install
+from URL flow is still available as a compact one-liner in the Actions card
+(Install from URL -> one click downloads, extracts INFs, runs pnputil
+/add-driver /install). The "Open HP support" / "Open MS catalog" buttons now
+just open the search landing pages so the user can grab a direct download URL
+to paste into the Quick install field.
+
+### Added — Network printer auto-discovery (mDNS browse)
+- New `PrinterEndpointDiscovery.BrowseAsync()` method: sends mDNS PTR queries
+  for `_ipp._tcp.local` and `_printer._tcp.local`, parses the answers plus
+  any SRV + A/AAAA records in the same packet, and returns a list of
+  `DiscoveredNetworkPrinter { Name, IpAddress, Port, IppUrl }`.
+- New "Discover" button in the Printers tab triggers a 3-second browse and
+  shows the discovered printers + their IPP URLs. The user can use the IPP
+  URL for direct supply / firmware queries.
+
+### Added — PWG 5100.11 firmware push (IPP System Services)
+- New `IppClient.UpdateFirmwareAsync(printerUri, firmwareFileUri)` sends the
+  standardized PWG 5100.11 Update-Operation (IPP operation-id 0x0027) to a
+  network printer. The printer downloads the firmware file from the URL and
+  applies it. The protocol does NOT bypass any signing - the printer
+  verifies the firmware signature itself.
+- New `FirmwareService.PushUpdateAsync(printer, firmwareUrl)` wraps the IPP
+  call, interprets the IPP status code, and returns a `FirmwarePushResult`
+  (Accepted / DeviceBusy / Rejected / network error).
+- New "Push firmware from URL" button in the Firmware tab asks for a URL and
+  pushes the update. The push is async - the printer may take several
+  minutes to apply and reboot.
+
+### Changed
+- Drivers view: removed the v0.1.x search/download card. Layout is now
+  Drivers + Actions (top) and Activity log (full-width bottom).
+- Actions card keeps Install at top, Removal under a subheader, and a compact
+  Quick install URL field + HP support / MS catalog buttons at the bottom.
+
+### Known limitation — WSD-USB consumables still require the v0.2+ protocol stack
+The user's HP printers (OfficeJet 4650, OfficeJet Pro 9730) are all
+WSD-USB. The WSD Port Monitor (`APMon.dll`) owns the only USB transport to
+those devices - the canonical XAddr (`http://<uuid>/PrintService`) is not
+TCP-reachable from the host. To read supplies from a WSD-USB printer, HSA
+would need to:
+  1. Open the device via WinUSB (vendor ID 0x03F0 for HP, product ID varies
+     by model)
+  2. Send WS-Discovery Probe over USB bulk IN/OUT
+  3. Receive the WS-Discovery ProbeMatch, extract the XAddr
+  4. Send WSD-Print GetPrinterElements over USB bulk IN/OUT
+  5. Parse `wprt:Ink`/`wprt:InkLevel`/`wprt:InkName` from the SOAP response
+
+This is a custom WSD-over-USB transport implementation - the WSD Port
+Monitor doesn't expose its USB transport to user-mode code, and the
+WSD-Print-Proxy Windows feature isn't available on this host. The
+WSD-Print SOAP client that landed in v0.1.8 is the right *parser* and
+activates automatically the moment an HTTP-reachable XAddr is available
+(network WSD printer, or a future WSD-over-USB adapter). The actual
+WinUSB + WS-Discovery-over-USB transport work is multi-day effort and
+remains on the v0.2+ roadmap.
+
+- Bump to 0.2.0.
 
 ---
 

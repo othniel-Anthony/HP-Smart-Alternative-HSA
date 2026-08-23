@@ -51,6 +51,9 @@
                     <TextBlock Grid.Column="0" Text="Printers" Style="{StaticResource HeadlineMediumText}"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <CheckBox Content="HP only" IsChecked="{Binding ShowOnlyHp}" Margin="0,0,16,0"/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Discover network"
+                                Command="{Binding DiscoverNetworkPrintersCommand}" Margin="0,0,8,0"
+                                ToolTip="Browse the local network for IPP-advertising printers (mDNS)"/>
                         <Button Style="{StaticResource M3TonalButton}" Content="Refresh"
                                 Command="{Binding RefreshCommand}"/>
                     </StackPanel>

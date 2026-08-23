@@ -18,6 +18,36 @@ public interface IFirmwareService
 
     /// <summary>Opens the HP support page in the user's default browser.</summary>
     void OpenHpSupportPage(string modelIdentifier);
+
+    /// <summary>
+    /// Pushes a firmware update to a network printer via the PWG 5100.11
+    /// IPP System Services Update-Operation. The printer downloads the file
+    /// from <paramref name="firmwareFileUri"/> and applies it. The protocol is
+    /// standardized and does NOT bypass any signing - the printer verifies
+    /// the firmware signature itself.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="FirmwarePushResult"/> describing the outcome. The printer
+    /// may take several minutes to apply the firmware and reboot; the IPP
+    /// response only acknowledges the request, not the final outcome.
+    /// </returns>
+    Task<FirmwarePushResult> PushUpdateAsync(
+        PrinterInfo printer, Uri firmwareFileUri, CancellationToken ct = default);
+}
+
+/// <summary>Outcome of a PWG 5100.11 firmware update push.</summary>
+public sealed record FirmwarePushResult(
+    bool Requested,
+    int IppStatusCode,
+    string Message)
+{
+    /// <summary>True when the printer accepted the Update-Operation request.</summary>
+    public bool Accepted => IppStatusCode == 0x0000;
+    /// <summary>True when the printer responded with a "device busy" status
+    /// (0x0500) - common when the printer is already processing.</summary>
+    public bool DeviceBusy => IppStatusCode == 0x0500;
+    /// <summary>True when the printer rejected the request (signature, format, etc.).</summary>
+    public bool Rejected => IppStatusCode >= 0x0400 && IppStatusCode < 0x0500;
 }
 
 /// <summary>
@@ -131,6 +161,37 @@ public sealed class FirmwareService : IFirmwareService
         if (!string.IsNullOrEmpty(model))
             url = $"https://support.hp.com/drivers?pattern={Uri.EscapeDataString(model)}&product=&filter=&lang=en&cc=us";
         return new Uri(url);
+    }
+
+    public async Task<FirmwarePushResult> PushUpdateAsync(
+        PrinterInfo printer, Uri firmwareFileUri, CancellationToken ct = default)
+    {
+        if (printer is null) throw new ArgumentNullException(nameof(printer));
+        if (firmwareFileUri is null) throw new ArgumentNullException(nameof(firmwareFileUri));
+        if (string.IsNullOrEmpty(printer.IpAddress))
+        {
+            return new FirmwarePushResult(false, -1,
+                "Printer has no IP address. PWG 5100.11 Update requires a network path. " +
+                "USB-only / WSD-USB printers can only be updated via the vendor's updater (see HP support link).");
+        }
+
+        var printerUri = $"ipp://{printer.IpAddress}/ipp/print";
+        _log.LogInformation("PWG 5100.11 Update-Operation: {Printer} -> {Uri}",
+            printer.Name, firmwareFileUri.AbsoluteUri);
+
+        var status = await _ipp.UpdateFirmwareAsync(printerUri, firmwareFileUri, ct: ct);
+        var message = status switch
+        {
+            0x0000 => "Printer accepted the Update-Operation. It will download and apply the firmware; the process may take several minutes and the printer may reboot.",
+            0x0400 => "Printer returned client-error: bad request. The document URI may be invalid or the format unsupported.",
+            0x0404 => "Printer returned 'document format not supported'. The URL must point to a firmware file the printer recognizes.",
+            0x0500 => "Printer returned 'device busy' - typically means the printer is currently processing another job. Try again later.",
+            0x0501 => "Printer returned 'not authorized' - the printer may be locked or the update URL is restricted.",
+            0x0504 => "Printer returned 'device error' - check the printer's status page or front panel.",
+            < 0    => "Network or IPP protocol error (no response from the printer).",
+            _      => $"Printer returned IPP status 0x{status:X4}."
+        };
+        return new FirmwarePushResult(true, status, message);
     }
 
     public void OpenHpSupportPage(string modelIdentifier)

@@ -13,11 +13,13 @@ public sealed class PrintersViewModel : ObservableObject
     private readonly IFirmwareService _firmware;
     private readonly IModelImageService _modelImages;
     private readonly IConsumableService _consumables;
+    private readonly PrinterEndpointDiscovery _discovery;
     private readonly IDialogService _dialog;
     private readonly ILogger<PrintersViewModel> _log;
 
     public ObservableCollection<PrinterInfo> Printers { get; } = new();
     public ObservableCollection<PrintJob> Jobs { get; } = new();
+    public ObservableCollection<DiscoveredNetworkPrinter> Discovered { get; } = new();
 
     private PrinterInfo? _selectedPrinter;
     public PrinterInfo? SelectedPrinter
@@ -61,6 +63,7 @@ public sealed class PrintersViewModel : ObservableObject
     public AsyncRelayCommand ResumeJobCommand { get; }
     public AsyncRelayCommand DetectFirmwareCommand { get; }
     public AsyncRelayCommand InstallDriverCommand { get; }
+    public AsyncRelayCommand DiscoverNetworkPrintersCommand { get; }
 
     public PrintersViewModel(
         IPrinterService printers,
@@ -68,6 +71,7 @@ public sealed class PrintersViewModel : ObservableObject
         IFirmwareService firmware,
         IModelImageService modelImages,
         IConsumableService consumables,
+        PrinterEndpointDiscovery discovery,
         IDialogService dialog,
         ILogger<PrintersViewModel> log)
     {
@@ -76,6 +80,7 @@ public sealed class PrintersViewModel : ObservableObject
         _firmware = firmware;
         _modelImages = modelImages;
         _consumables = consumables;
+        _discovery = discovery;
         _dialog = dialog;
         _log = log;
 
@@ -123,6 +128,36 @@ public sealed class PrintersViewModel : ObservableObject
         ResumeJobCommand = new AsyncRelayCommand(ResumeJobAsync, () => SelectedJob is not null);
         DetectFirmwareCommand = new AsyncRelayCommand(DetectFirmwareAsync, () => SelectedPrinter is not null);
         InstallDriverCommand = new AsyncRelayCommand(InstallDriverForSelectedAsync, () => SelectedPrinter is not null);
+        DiscoverNetworkPrintersCommand = new AsyncRelayCommand(DiscoverNetworkPrintersAsync);
+    }
+
+    /// <summary>
+    /// v0.2.0: browses the local network for IPP-advertising printers (mDNS
+    /// PTR query for _ipp._tcp.local and _printer._tcp.local). Results show
+    /// in a separate list below the installed printers; the user can use the
+    /// IPP URL to query supplies or push firmware.
+    /// </summary>
+    private async Task DiscoverNetworkPrintersAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            StatusMessage = "Browsing the network for IPP-advertising printers (mDNS, ~3s)…";
+            var results = await _discovery.BrowseAsync();
+            Discovered.Clear();
+            foreach (var d in results) Discovered.Add(d);
+            StatusMessage = results.Count == 0
+                ? "No network printers found via mDNS. Make sure your firewall allows UDP 5353 multicast."
+                : $"Found {results.Count} network printer(s) via mDNS.";
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Network discovery failed");
+            StatusMessage = "Network discovery failed.";
+            _dialog.ShowError("Network discovery failed", ex);
+        }
+        finally { IsBusy = false; }
     }
 
     private PrintJob? _selectedJob;

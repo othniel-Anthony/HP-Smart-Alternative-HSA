@@ -47,6 +47,7 @@ public sealed class FirmwareViewModel : ObservableObject
     public AsyncRelayCommand DetectSelectedCommand { get; }
     public AsyncRelayCommand DetectAllHpCommand { get; }
     public RelayCommand OpenHpSupportCommand { get; }
+    public AsyncRelayCommand PushFirmwareCommand { get; }
 
     public FirmwareViewModel(
         IPrinterService printers,
@@ -64,6 +65,7 @@ public sealed class FirmwareViewModel : ObservableObject
         DetectAllHpCommand = new AsyncRelayCommand(DetectAllHpAsync);
         OpenHpSupportCommand = new RelayCommand(_ => OpenSupportForSelected(),
             _ => SelectedResult is not null && !string.IsNullOrEmpty(SelectedResult.HpSupportUrl));
+        PushFirmwareCommand = new AsyncRelayCommand(PushFirmwareAsync, () => SelectedPrinter is not null);
     }
 
     public async Task LoadPrintersAsync()
@@ -151,5 +153,56 @@ public sealed class FirmwareViewModel : ObservableObject
         {
             _dialog.ShowError("Failed to open browser", ex);
         }
+    }
+
+    /// <summary>
+    /// v0.2.0: pushes a firmware update to the selected printer via the PWG 5100.11
+    /// IPP System Services Update-Operation. Asks the user for a URL, sends the
+    /// request, and reports the IPP status code.
+    /// </summary>
+    private async Task PushFirmwareAsync()
+    {
+        if (SelectedPrinter is null) return;
+        var p = SelectedPrinter;
+        var url = Microsoft.VisualBasic.Interaction.InputBox(
+            $"Enter the direct URL of the firmware file for '{p.Name}':\n\n" +
+            "The printer will download the file and apply it. The process may take several minutes.",
+            "Push firmware update",
+            "");
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var firmwareUri))
+        {
+            _dialog.ShowError("Invalid URL", "Please enter an absolute URL (starting with http:// or https://).");
+            return;
+        }
+        if (!firmwareUri.Scheme.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            _dialog.ShowError("Unsupported URL scheme", "Use an http:// or https:// URL.");
+            return;
+        }
+
+        if (!_dialog.ConfirmDestructive(
+            "Push firmware update",
+            $"Send PWG 5100.11 Update-Operation to '{p.Name}' for:\n  {firmwareUri}\n\n" +
+            "The printer will download the file and apply it. The process may take several " +
+            "minutes and the printer may reboot. Continue?",
+            "Push"))
+            return;
+
+        IsBusy = true;
+        try
+        {
+            StatusMessage = $"Sending PWG 5100.11 Update-Operation to {p.Name}…";
+            var res = await _firmware.PushUpdateAsync(p, firmwareUri);
+            StatusMessage = res.Message;
+            _dialog.ShowInfo("Firmware update", res.Message);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Firmware push failed");
+            StatusMessage = "Firmware push failed.";
+            _dialog.ShowError("Firmware push failed", ex);
+        }
+        finally { IsBusy = false; }
     }
 }

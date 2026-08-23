@@ -70,6 +70,9 @@
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
                     <Button Style="{StaticResource M3FilledButton}" Content="Open HP support page"
                             Command="{Binding OpenHpSupportCommand}" Margin="0,0,8,0"/>
+                    <Button Style="{StaticResource M3TonalButton}" Content="Push firmware from URL…"
+                            Command="{Binding PushFirmwareCommand}"
+                            ToolTip="PWG 5100.11 IPP System Services Update-Operation. The printer downloads the firmware from the URL and applies it."/>
                 </StackPanel>
 
                 <ListBox Grid.Row="2" Style="{StaticResource M3ListBox}"
