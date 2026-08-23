@@ -11,13 +11,13 @@ namespace HSA.Services;
 /// <summary>
 /// Reads ink/toner consumable levels from HP printers using a multi-transport strategy:
 ///   1. SNMP (RFC 3805 prtMarkerSuppliesTable) for direct network HP printers.
-///   2. IPP (PWG 5100.13 marker-* attributes) for any HP printer reachable via IPP, including
-///      WSD-USB / IPP-over-USB devices whose endpoint is discoverable.
-///   3. Falls back to "no data" with a reason; the caller surfaces the reason to the user.
+///   2. IPP (PWG 5100.13 marker-* attributes) for any HP printer reachable via IPP,
+///      including WSD-USB / IPP-over-USB devices whose endpoint is discoverable.
+///   3. WSD-Print (Microsoft WSD-Print GetPrinterElements SOAP) for WSD-USB printers
+///      and any other WSD device whose XAddr we can derive from the registry / WSDAPI.
 ///
-/// WSD-USB-only devices that don't expose an IPP endpoint (Location URL unreachable and no
-/// mDNS advertisement) currently cannot be queried. The WSD port monitor owns the only
-/// transport to those devices. WSD-Print SOAP support is a v0.2 deliverable.
+/// Each transport is tried in order. As soon as one returns consumable data we stop;
+/// if all return empty, the caller surfaces the "no data" state to the user.
 /// </summary>
 public sealed class ConsumableService : IConsumableService
 {
@@ -37,17 +37,20 @@ public sealed class ConsumableService : IConsumableService
 
     private readonly SnmpClient _snmp;
     private readonly IppConsumableSource _ipp;
+    private readonly WsdPrintConsumableSource _wsd;
     private readonly PrinterEndpointDiscovery _endpoint;
     private readonly ILogger<ConsumableService> _log;
 
     public ConsumableService(
         ILogger<ConsumableService> log,
         IppConsumableSource ipp,
+        WsdPrintConsumableSource wsd,
         PrinterEndpointDiscovery endpoint)
     {
         _log = log;
         _snmp = new SnmpClient();
         _ipp = ipp;
+        _wsd = wsd;
         _endpoint = endpoint;
     }
 
@@ -73,6 +76,18 @@ public sealed class ConsumableService : IConsumableService
         {
             var ippItems = await _ipp.GetConsumablesAsync(ippUri, printer.Name, ct);
             if (ippItems.Count > 0) return ippItems;
+        }
+
+        // 3) Try WSD-Print SOAP. The XAddr is derived from the WSD Port Monitor's port
+        //    config (for WSD-USB devices) or from the printer's Location URL. The WSD Port
+        //    Monitor forwards requests on the canonical http://<uuid>/PrintService URL to
+        //    the device over WSD-over-USB. Network WSD printers expose the same URL on a
+        //    reachable port.
+        var wsdXAddr = _endpoint.FindWsdUsbXAddr(printer) ?? ippUri;
+        if (!string.IsNullOrEmpty(wsdXAddr))
+        {
+            var wsdItems = await _wsd.GetConsumablesAsync(wsdXAddr, printer.Name, ct);
+            if (wsdItems.Count > 0) return wsdItems;
         }
 
         return Array.Empty<ConsumableStatus>();

@@ -115,6 +115,7 @@ public partial class App : Application
         sc.AddSingleton<IDriverService, DriverService>();
         sc.AddSingleton<IFirmwareService, FirmwareService>();
         sc.AddSingleton<IppConsumableSource>();
+        sc.AddSingleton<WsdPrintConsumableSource>();
         sc.AddSingleton<PrinterEndpointDiscovery>();
         sc.AddSingleton<IConsumableService, ConsumableService>();
         sc.AddSingleton<IModelImageService, ModelImageService>();

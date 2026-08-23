@@ -60,6 +60,43 @@ public sealed class PrinterEndpointDiscovery
     }
 
     /// <summary>
+    /// Discovers the WSD-Print XAddr for a WSD-USB printer. Reads the device's UUID
+    /// from the WSD Port Monitor's port config and constructs the canonical XAddr
+    /// (http://&lt;uuid&gt;/PrintService). The WSD Port Monitor's SpoolerApi or
+    /// WSD-Print service proxy is expected to forward WSD-Print requests on this URL
+    /// to the device over WSD-over-USB.
+    ///
+    /// Returns null for printers that aren't WSD-USB (no WSD Port Monitor entry).
+    /// The returned URL may not be reachable via TCP from the host; the WSD-Print
+    /// source will return an empty list if the connection fails, in which case the
+    /// Supplies UI will fall back to the "WSD-USB not supported" status row.
+    /// </summary>
+    public string? FindWsdUsbXAddr(PrinterInfo printer)
+    {
+        if (printer is null) return null;
+        if (!printer.PortName.StartsWith("WSD-", StringComparison.OrdinalIgnoreCase)) return null;
+
+        try
+        {
+            // The WSD Port Monitor stores per-port config including the Printer UUID.
+            // Path: HKLM\SYSTEM\CurrentControlSet\Control\Print\Monitors\WSD Port\Ports\<PortName>
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                $@"SYSTEM\CurrentControlSet\Control\Print\Monitors\WSD Port\Ports\{printer.PortName}");
+            if (key is null) return null;
+            var uuid = key.GetValue("Printer UUID") as string;
+            if (string.IsNullOrWhiteSpace(uuid)) return null;
+            // The GUID might be in the form "46d67f11-480c-4b4e-b9dd-f8f60a82c3ba" or
+            // wrapped in URN form. Strip URN prefix if present.
+            uuid = uuid.Replace("urn:uuid:", "", StringComparison.OrdinalIgnoreCase).Trim();
+            return $"http://{uuid}/PrintService";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Reads the Location attribute from the printer's PnP device. We use SetupDi APIs
     /// via P/Invoke on winspool (already in scope), but the simplest path is to read
     /// DEVPKEY_Device_LocationInfo via WMI.

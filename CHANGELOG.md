@@ -10,7 +10,53 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - PWG 5100.11 IPP System Services firmware push (where supported by the printer)
 - Windows Update catalog integration for automatic driver fetch
 - Network printer auto-discovery (mDNS / WS-Discovery)
-- **WSD-Print SOAP for WSD-USB printers** (consumables over the WSD port monitor's transport)
+- **WSD-USB protocol stack** (USB bulk transfers, WS-Discovery + WSD-Print SOAP over WSD-over-USB)
+
+---
+
+## [0.1.8] - 2026-08-23
+
+### Added — WSD-Print SOAP client + WSD-USB-aware code path
+- `Services/WsdPrintConsumableSource.cs` sends the Microsoft WSD-Print
+  `GetPrinterElements` SOAP request to a printer's XAddr and parses the
+  `wprt:Ink` / `wprt:InkLevel` / `wprt:InkName` / `wprt:MarkerHighLevel`
+  response. This is the standard way to read consumables from any WSD-capable
+  printer.
+- `PrinterEndpointDiscovery.FindWsdUsbXAddr` reads the printer's UUID from the
+  WSD Port Monitor's per-port config (registry) and constructs the canonical
+  XAddr `http://<uuid>/PrintService`. The `ConsumableService` now tries this
+  path as a final fallback for WSD-USB printers.
+- `Native/WsdApiClient.cs` declares the WSDAPI COM interop interfaces
+  (`IWSDiscoveryProvider`, `IWSDiscoveryProviderNotify`, `IWSDiscoveryProbeMatch`)
+  and P/Invokes `WSDCreateDiscoveryProvider`. The interfaces are ready for the
+  v0.2 work that will use WS-Discovery over UDP to find network WSD printers
+  and pull their XAddrs.
+
+### Known limitation — WSD-USB consumables still require v0.2
+For WSD-USB printers (PnP InstanceId starts with `SWD\PRINTENUM\WSD-`, the
+"Microsoft IPP Class Driver" case), the WSD Port Monitor owns the only transport
+to the device over USB. The canonical XAddr (`http://<uuid>/PrintService`) is
+not TCP-reachable from the host - the WSD Port Monitor forwards WSD-Print
+requests to the device via WSD-over-USB internally, but does not expose an
+HTTP proxy.
+
+Three paths exist to fix this in v0.2:
+1. **Implement the WSD-USB protocol stack** (USB bulk transfers, WSD-XML over
+   USB, the standard WSD-Print envelope). This is the only path that doesn't
+   depend on Windows features or undocumented APIs.
+2. **Enable the WSD Print Proxy Windows feature** so WSD-USB devices appear
+   as network WSD printers on a local port. This feature isn't available on
+   all Windows editions and isn't enabled on most installations.
+3. **WSDAPI COM interop with a custom USB transport.** Significant work.
+
+This release adds the WSD-Print SOAP client and the WSD-USB-aware discovery
+code path, so the moment the underlying transport becomes reachable (e.g. on
+a network WSD printer, or once the WSD-Print-Proxy is enabled, or once the
+WSD-USB protocol is implemented in v0.2), the same code path automatically
+returns consumables. The Supplies tab now shows a clear
+"Supplies unavailable (WSD-USB) - requires WSD-USB protocol support (v0.2+)"
+status row for WSD-USB printers that the WSD Port Monitor hasn't proxied.
+- Bump to 0.1.8.
 
 ---
 

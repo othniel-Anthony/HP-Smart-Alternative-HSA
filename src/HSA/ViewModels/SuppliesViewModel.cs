@@ -113,7 +113,7 @@ public sealed class SuppliesViewModel : ObservableObject
                 {
                     PrinterName  = p.Name,
                     Description  = IsWsdUsbOnly(p)
-                        ? "Supplies unavailable (WSD-USB) — WSD-Print support coming in v0.2"
+                        ? "Supplies unavailable (WSD-USB) — requires WSD-USB protocol support (v0.2+)"
                         : "No consumable data returned (printer may not support SNMP/IPP query)",
                     Color        = "unknown",
                     Class        = ConsumableClass.Other,
