@@ -12,6 +12,10 @@ public interface IPrinterService
     Task SetAsDefaultAsync(string name, CancellationToken ct = default);
     Task RenameAsync(string oldName, string newName, CancellationToken ct = default);
     Task DeleteAsync(string name, CancellationToken ct = default);
+    /// <summary>UAC-elevated fallback for <see cref="DeleteAsync"/>. Returns the prompt outcome.</summary>
+    DeleteElevatedResult DeleteElevated(string name);
+    /// <summary>Open Windows Settings → Printers (escape hatch when HSA can't delete a printer).</summary>
+    void OpenWindowsPrintersSettings();
     Task OpenAdvancedPropertiesAsync(string name, IntPtr hwndOwner);
     Task OpenPrintingPreferencesAsync(string name, IntPtr hwndOwner);
     Task PrintTestPageAsync(string name, CancellationToken ct = default);
@@ -19,6 +23,22 @@ public interface IPrinterService
     Task PauseQueueAsync(string name, CancellationToken ct = default);
     Task ResumeQueueAsync(string name, CancellationToken ct = default);
     Task PurgeQueueAsync(string name, CancellationToken ct = default);
+}
+
+/// <summary>Result of <see cref="IPrinterService.DeleteElevated"/>.</summary>
+public enum DeleteElevatedOutcome
+{
+    Launched,
+    Cancelled,
+    Failed,
+}
+
+/// <summary>Outcome + optional error message for an elevated delete attempt.</summary>
+public readonly record struct DeleteElevatedResult(DeleteElevatedOutcome Outcome, string? Error)
+{
+    public static DeleteElevatedResult Launched() => new(DeleteElevatedOutcome.Launched, null);
+    public static DeleteElevatedResult Cancelled() => new(DeleteElevatedOutcome.Cancelled, null);
+    public static DeleteElevatedResult Failed(string error) => new(DeleteElevatedOutcome.Failed, error);
 }
 
 /// <summary>
@@ -114,6 +134,78 @@ public sealed class PrinterService : IPrinterService
             finally { Winspool.ClosePrinter(h); }
             _log.LogInformation("Deleted printer {Name}", name);
         }, ct);
+    }
+
+    /// <summary>
+    /// Spawns a UAC-elevated PowerShell process to remove the named printer.
+    /// Used as a fallback when <see cref="DeleteAsync"/> fails with
+    /// "Access is denied" (Win32 error 5) — the spooler API requires admin
+    /// rights to delete printers, but most users run HSA unelevated.
+    /// Returns the UAC prompt outcome: Accepted means the elevated process
+    /// was launched; UserCancelled means the user dismissed UAC.
+    /// </summary>
+    public DeleteElevatedResult DeleteElevated(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return DeleteElevatedResult.Failed("Empty printer name.");
+        try
+        {
+            // PowerShell with -Verb runas triggers UAC. The script uses
+            // Remove-Printer (built-in cmdlet, present on Windows 10/11 /
+            // Server 2016+). -ErrorAction Stop surfaces failures to the
+            // caller. We capture $LASTEXITCODE into the exit code.
+            //
+            // IMPORTANT: pass the name as a positional argument (after -Command)
+            // and use a here-string literal so the embedded printer name
+            // can't be interpreted as PowerShell syntax. Names with single
+            // quotes would break a single-quoted literal; escape via
+            // -replace "'","''" so PS treats them as a literal char.
+            var escaped = name.Replace("'", "''");
+            var script =
+                "$ErrorActionPreference = 'Stop'; " +
+                $"try {{ Remove-Printer -Name '{escaped}' -ErrorAction Stop; exit 0 }} " +
+                "catch { Write-Error $_.Exception.Message; exit 1 }";
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -NonInteractive -Command \"{script}\"",
+                UseShellExecute = true,   // required for Verb=runas UAC
+                Verb = "runas",
+            };
+            var p = System.Diagnostics.Process.Start(psi);
+            if (p is null)
+                return DeleteElevatedResult.Failed("Failed to launch elevated PowerShell.");
+            _log.LogInformation("Launched elevated Remove-Printer for {Name} (PID {Pid})", name, p.Id);
+            return DeleteElevatedResult.Launched();
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // ERROR_CANCELLED — user dismissed the UAC prompt.
+            return DeleteElevatedResult.Cancelled();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to launch elevated Remove-Printer for {Name}", name);
+            return DeleteElevatedResult.Failed(ex.Message);
+        }
+    }
+
+    /// <summary>Open Windows Settings → Bluetooth & devices → Printers & scanners.</summary>
+    public void OpenWindowsPrintersSettings()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ms-settings:printers",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to open Windows Settings → Printers");
+            throw;
+        }
     }
 
     public Task OpenAdvancedPropertiesAsync(string name, IntPtr hwndOwner)

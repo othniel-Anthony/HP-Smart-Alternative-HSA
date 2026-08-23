@@ -211,6 +211,10 @@
                         <Button Style="{StaticResource M3FilledButtonError}" Content="Remove printer"
                                 Command="{Binding DeletePrinterCommand}" HorizontalAlignment="Stretch"
                                 ToolTip="Removes this printer from the Windows spooler. The driver stays installed."/>
+                        <Button Style="{StaticResource M3TextButton}" Content="Open in Windows Settings…"
+                                Command="{Binding OpenWindowsPrintersSettingsCommand}" HorizontalAlignment="Left"
+                                Margin="0,4,0,0"
+                                ToolTip="Opens Windows Settings → Bluetooth &amp; devices → Printers &amp; scanners, where you can remove a printer with a standard UAC prompt."/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

@@ -11,6 +11,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.4] - 2026-08-23
+
+### Fixed
+
+- **"Remove printer" couldn't actually delete printers** — `Winspool.DeletePrinter` returns Win32 error 5 (access denied) for non-admin users, which is the default for HSA. v0.2.3 only surfaced a "run as admin" hint; v0.2.4 actually fixes it: when the unelevated call fails, the dialog now offers **"Elevate & retry"** which spawns a UAC-elevated `powershell -Verb runas` running `Remove-Printer -Name '<name>'`. The HSA window then auto-refreshes the printer list after a short delay so the deleted row disappears.
+
+### Added
+
+- **"Open in Windows Settings…"** text button in the Actions card under "Remove printer". Opens `ms-settings:printers` for users who'd rather use the standard UAC removal path from Windows Settings.
+
+---
+
 ## [0.2.3] - 2026-08-23
 
 ### Added

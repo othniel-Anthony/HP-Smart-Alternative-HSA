@@ -136,6 +136,7 @@ public sealed class PrintersViewModel : ObservableObject
     public AsyncRelayCommand ResumeQueueCommand { get; }
     public AsyncRelayCommand PurgeQueueCommand { get; }
     public AsyncRelayCommand DeletePrinterCommand { get; }
+    public RelayCommand OpenWindowsPrintersSettingsCommand { get; }
     public AsyncRelayCommand CancelJobCommand { get; }
     public AsyncRelayCommand PauseJobCommand { get; }
     public AsyncRelayCommand ResumeJobCommand { get; }
@@ -224,16 +225,39 @@ public sealed class PrintersViewModel : ObservableObject
                 catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
                 {
                     // Access denied — Winspool.DeletePrinter needs admin or the printer
-                    // must not be in use. Offer to open Windows' Remove Printer dialog.
+                    // must not be in use. Offer the UAC-elevated fallback.
                     _log.LogWarning(ex, "Remove printer: access denied for {Printer}", SelectedPrinter.Name);
-                    _dialog.ShowError("Remove printer — access denied",
-                        $"Windows refused to remove '{SelectedPrinter.Name}' (error 5: Access is denied). " +
-                        "This usually means the printer is in use, has a print job pending, or the " +
-                        "spooler requires admin rights. Try:\n" +
-                        "  • Cancel any pending print jobs first\n" +
-                        "  • Run HSA as Administrator (right-click HSA.exe)\n" +
-                        "  • Use Windows Settings → Bluetooth & devices → Printers & scanners");
-                    StatusMessage = "Remove failed (access denied).";
+                    var tryElevate = _dialog.ConfirmDestructive(
+                        "Remove printer — access denied",
+                        $"Windows refused to remove '{SelectedPrinter.Name}' (error 5: Access is denied).\n\n" +
+                        "HSA can re-run the removal elevated (UAC prompt). Proceed?",
+                        "Elevate & retry");
+                    if (tryElevate)
+                    {
+                        var result = _printers.DeleteElevated(SelectedPrinter.Name);
+                        switch (result.Outcome)
+                        {
+                            case DeleteElevatedOutcome.Launched:
+                                StatusMessage = $"Elevated removal launched for '{SelectedPrinter.Name}'. Refreshing in 3s…";
+                                // The elevated PowerShell process runs async; wait briefly then
+                                // refresh the local view so the deleted row disappears.
+                                await Task.Delay(3000);
+                                await RefreshAsync();
+                                break;
+                            case DeleteElevatedOutcome.Cancelled:
+                                StatusMessage = "Elevated removal cancelled by user.";
+                                break;
+                            case DeleteElevatedOutcome.Failed:
+                                _dialog.ShowError("Elevated removal failed",
+                                    result.Error ?? "Unknown error launching PowerShell.");
+                                StatusMessage = "Elevated removal failed.";
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        StatusMessage = "Remove cancelled. (Try Windows Settings → Printers.)";
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -256,6 +280,7 @@ public sealed class PrintersViewModel : ObservableObject
             _ => ConfigureEwsForSelected(),
             _ => SelectedPrinter is not null);
         DiscoverEwsCommand = new AsyncRelayCommand(DiscoverEwsForSelectedAsync, () => SelectedPrinter is not null);
+        OpenWindowsPrintersSettingsCommand = new RelayCommand(_ => _printers.OpenWindowsPrintersSettings());
     }
 
     private bool HasConfiguredEws(PrinterInfo p)
