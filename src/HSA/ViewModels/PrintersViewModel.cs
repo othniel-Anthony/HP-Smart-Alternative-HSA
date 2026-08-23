@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Windows.Media;
 using HSA.Models;
 using HSA.Native;
 using HSA.Services;
@@ -31,6 +32,11 @@ public sealed class PrintersViewModel : ObservableObject
         {
             if (SetField(ref _selectedPrinter, value))
             {
+                // Re-publish EWS status — the indicator reads from the selected printer.
+                OnPropertyChanged(nameof(EwsStatusText));
+                OnPropertyChanged(nameof(EwsStatusShortText));
+                OnPropertyChanged(nameof(EwsUrlDisplay));
+                OnPropertyChanged(nameof(EwsStatusBrush));
                 // The action commands' CanExecute is bound to SelectedPrinter is not null.
                 // CommandManager only re-evaluates on input events; programmatic changes (e.g.
                 // auto-selecting Printers[0] in RefreshAsync) don't fire a requery, so the
@@ -42,8 +48,69 @@ public sealed class PrintersViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Human-readable EWS configuration status for the selected printer, e.g.
+    /// "Configured: http://192.168.1.99", "Not configured", or "Select a printer".
+    /// Used as the tooltip on the short-status pill.
+    /// </summary>
+    public string EwsStatusText
+    {
+        get
+        {
+            if (SelectedPrinter is null) return "No printer selected";
+            if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+                && !string.IsNullOrWhiteSpace(url))
+                return $"Configured: {url}";
+            return "Not configured";
+        }
+    }
+
+    /// <summary>Compact EWS status pill text (no URL — that's shown in a separate line).</summary>
+    public string EwsStatusShortText
+    {
+        get
+        {
+            if (SelectedPrinter is null) return "—";
+            if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+                && !string.IsNullOrWhiteSpace(url))
+                return "✓ Configured";
+            return "Not set";
+        }
+    }
+
+    /// <summary>Just the EWS URL (or empty) — shown below the status pill.</summary>
+    public string EwsUrlDisplay
+    {
+        get
+        {
+            if (SelectedPrinter is null) return string.Empty;
+            if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+                && !string.IsNullOrWhiteSpace(url))
+                return url;
+            return "(no EWS URL — click 'Set EWS URL…' to add one)";
+        }
+    }
+
+    /// <summary>Brush matching <see cref="EwsStatusShortText"/> — green when set, neutral otherwise.</summary>
+    public Brush EwsStatusBrush
+    {
+        get
+        {
+            if (SelectedPrinter is null) return EwsNoneSelectedBrush;
+            if (_settings.Current.EwsAddresses.TryGetValue(SelectedPrinter.DeviceId, out var url)
+                && !string.IsNullOrWhiteSpace(url))
+                return EwsConfiguredBrush;
+            return EwsNotConfiguredBrush;
+        }
+    }
+
     private bool _isBusy;
     public bool IsBusy { get => _isBusy; set => SetField(ref _isBusy, value); }
+
+    // Cached brushes for the EWS status pill (avoid allocating on every getter access).
+    private static readonly Brush EwsConfiguredBrush = new SolidColorBrush(Color.FromRgb(0xC8, 0xE6, 0xC9));  // green 100
+    private static readonly Brush EwsNotConfiguredBrush = new SolidColorBrush(Color.FromRgb(0xE7, 0xE0, 0xEC)); // purple-grey 50
+    private static readonly Brush EwsNoneSelectedBrush = new SolidColorBrush(Color.FromRgb(0xEC, 0xEA, 0xEE)); // neutral
 
     private string _statusMessage = "Ready.";
     public string StatusMessage { get => _statusMessage; set => SetField(ref _statusMessage, value); }
@@ -93,6 +160,15 @@ public sealed class PrintersViewModel : ObservableObject
         _log = log;
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
+        // EWS status pill depends on _settings; re-publish when settings change.
+        _settings.Changed += (_, _) =>
+        {
+            OnPropertyChanged(nameof(EwsStatusText));
+            OnPropertyChanged(nameof(EwsStatusShortText));
+            OnPropertyChanged(nameof(EwsUrlDisplay));
+            OnPropertyChanged(nameof(EwsStatusBrush));
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        };
         SetAsDefaultCommand = new AsyncRelayCommand(
             async () => { if (SelectedPrinter is null) return; await _printers.SetAsDefaultAsync(SelectedPrinter.Name); await RefreshAsync(); },
             () => SelectedPrinter is not null);

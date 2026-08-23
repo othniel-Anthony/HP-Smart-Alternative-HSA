@@ -141,52 +141,75 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Actions card -->
-            <Border Grid.Row="0" Style="{StaticResource M3Card}">
-                <StackPanel>
-                    <TextBlock Text="Actions" Style="{StaticResource TitleLargeText}" Margin="0,0,0,12"/>
+            <!-- Actions card. Fixed max height + ScrollViewer so the EWS / Remove
+                 buttons at the bottom are always reachable even on short windows. -->
+            <Border Grid.Row="0" Style="{StaticResource M3Card}" MaxHeight="540" VerticalAlignment="Top"
+                    HorizontalAlignment="Stretch" ClipToBounds="True">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="Actions" Style="{StaticResource TitleLargeText}" Margin="0,0,0,12"/>
 
-                    <UniformGrid Columns="2" Margin="0,0,0,8">
+                        <!-- Single-column button list. v0.2.1's 2-column grid was
+                             overflowing the right column on some window widths,
+                             so we trade density for guaranteed reachability. -->
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Set as default"
-                                Command="{Binding SetAsDefaultCommand}" Margin="0,0,4,8"/>
+                                Command="{Binding SetAsDefaultCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Test page"
-                                Command="{Binding PrintTestPageCommand}" Margin="4,0,0,8"/>
-                        <Button Style="{StaticResource M3OutlinedButton}" Content="Preferences"
-                                Command="{Binding OpenPrintingPreferencesCommand}" Margin="0,0,4,8"/>
-                        <Button Style="{StaticResource M3OutlinedButton}" Content="Advanced"
-                                Command="{Binding OpenAdvancedPropertiesCommand}" Margin="4,0,0,8"/>
+                                Command="{Binding PrintTestPageCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Printing preferences"
+                                Command="{Binding OpenPrintingPreferencesCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Advanced properties"
+                                Command="{Binding OpenAdvancedPropertiesCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Pause queue"
-                                Command="{Binding PauseQueueCommand}" Margin="0,0,4,8"/>
+                                Command="{Binding PauseQueueCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Resume queue"
-                                Command="{Binding ResumeQueueCommand}" Margin="4,0,0,8"/>
+                                Command="{Binding ResumeQueueCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
                         <Button Style="{StaticResource M3OutlinedButton}" Content="Detect firmware"
-                                Command="{Binding DetectFirmwareCommand}" Margin="0,0,4,8"
-                                Grid.ColumnSpan="2"/>
-                    </UniformGrid>
+                                Command="{Binding DetectFirmwareCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
 
-                    <Button Style="{StaticResource M3TonalButton}" Content="Install driver INF…"
-                            Command="{Binding InstallDriverCommand}" HorizontalAlignment="Stretch" Margin="0,4,0,8"/>
+                        <Button Style="{StaticResource M3TonalButton}" Content="Install driver INF…"
+                                Command="{Binding InstallDriverCommand}" HorizontalAlignment="Stretch" Margin="0,6,0,8"/>
 
-                    <Button Style="{StaticResource M3TextButton}" Content="Purge print queue"
-                            Command="{Binding PurgeQueueCommand}" HorizontalAlignment="Left"/>
+                        <Button Style="{StaticResource M3TextButton}" Content="Purge print queue"
+                                Command="{Binding PurgeQueueCommand}" HorizontalAlignment="Left"/>
 
-                    <Separator Margin="0,8" Background="{StaticResource OutlineVariantBrush}"/>
+                        <Separator Margin="0,8" Background="{StaticResource OutlineVariantBrush}"/>
 
-                    <!-- EWS (Embedded Web Server): set the URL once and the user can
-                         open the printer's EWS dashboard in their browser. Also lets
-                         HSA read consumables (ink/toner state, model, firmware) for
-                         WSD-USB printers that don't expose a reachable IPP endpoint. -->
-                    <TextBlock Text="EWS" Style="{StaticResource TitleSmallText}"
-                               Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,4,0,8"/>
-                    <Button Style="{StaticResource M3OutlinedButton}" Content="Open printer EWS…"
-                            Command="{Binding OpenEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
-                            ToolTip="Opens the printer's Embedded Web Server in your default browser. Lets you change Wi-Fi, update firmware, see ink levels, etc."/>
-                    <Button Style="{StaticResource M3TextButton}" Content="Set EWS URL…"
-                            Command="{Binding ConfigureEwsCommand}" HorizontalAlignment="Left"/>
+                        <!-- EWS (Embedded Web Server): set the URL once and the user can
+                             open the printer's EWS dashboard in their browser. Also lets
+                             HSA read consumables (ink/toner state, model, firmware) for
+                             WSD-USB printers that don't expose a reachable IPP endpoint. -->
+                        <Grid Margin="0,4,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="EWS" Style="{StaticResource TitleSmallText}"
+                                       Foreground="{StaticResource OnSurfaceVariantBrush}" VerticalAlignment="Center"/>
+                            <Border Grid.Column="1" Style="{StaticResource M3StatusPill}"
+                                    Background="{Binding EwsStatusBrush}"
+                                    ToolTip="{Binding EwsStatusText}">
+                                <TextBlock Text="{Binding EwsStatusShortText}" Style="{StaticResource LabelMediumText}"/>
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{Binding EwsUrlDisplay}"
+                                   Style="{StaticResource BodySmallText}"
+                                   Foreground="{StaticResource OnSurfaceVariantBrush}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,0,0,8"
+                                   ToolTip="{Binding EwsUrlDisplay}"/>
+                        <Button Style="{StaticResource M3OutlinedButton}" Content="Open printer EWS…"
+                                Command="{Binding OpenEwsCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+                                ToolTip="Opens the printer's Embedded Web Server in your default browser. Lets you change Wi-Fi, update firmware, see ink levels, etc."/>
+                        <Button Style="{StaticResource M3TextButton}" Content="Set EWS URL…"
+                                Command="{Binding ConfigureEwsCommand}" HorizontalAlignment="Left"/>
 
-                    <Button Style="{StaticResource M3FilledButtonError}" Content="Remove printer"
-                            Command="{Binding DeletePrinterCommand}" HorizontalAlignment="Stretch"/>
-                </StackPanel>
+                        <Separator Margin="0,8" Background="{StaticResource OutlineVariantBrush}"/>
+
+                        <Button Style="{StaticResource M3FilledButtonError}" Content="Remove printer"
+                                Command="{Binding DeletePrinterCommand}" HorizontalAlignment="Stretch"
+                                ToolTip="Removes this printer from the Windows spooler. The driver stays installed."/>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- Jobs card -->

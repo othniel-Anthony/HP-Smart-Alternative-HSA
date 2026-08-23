@@ -269,6 +269,7 @@ public sealed class PrinterService : IPrinterService
         return new PrinterInfo
         {
             Name = w.Name,
+            DeviceId = string.IsNullOrWhiteSpace(w.DeviceId) ? w.Name : w.DeviceId,
             ShareName = w.ShareName,
             PortName = w.PortName,
             DriverName = w.DriverName,

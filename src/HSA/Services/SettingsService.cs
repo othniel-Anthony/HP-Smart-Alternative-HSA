@@ -24,7 +24,11 @@ public sealed class SettingsService
     {
         WriteIndented = true,
         // No BOM, no escaping of common chars (keeps the file diff-friendly).
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        // Don't write null fields. This avoids creating a file that can't be read back
+        // (System.Text.Json refuses to deserialize null into a non-nullable value type
+        // like bool, and into non-nullable reference types when nullable-ref-types is on).
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly ILogger<SettingsService>? _log;
@@ -42,7 +46,7 @@ public sealed class SettingsService
         Current = LoadFromDisk();
     }
 
-    private static AppSettings LoadFromDisk()
+    private AppSettings LoadFromDisk()
     {
         try
         {
@@ -52,11 +56,21 @@ public sealed class SettingsService
             // decoding on read.
             var json = File.ReadAllText(SettingsPath, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             var s = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts);
-            return s ?? new AppSettings();
+            if (s is null)
+            {
+                _log?.LogWarning("Settings file at {Path} deserialized to null; using defaults.", SettingsPath);
+                return new AppSettings();
+            }
+            _log?.LogInformation("Settings loaded: Theme={Theme} HpOnly={Hp} EwsCount={Ews}",
+                s.ThemeMode, s.StartWithHpOnlyFilter, s.EwsAddresses.Count);
+            return s;
         }
-        catch
+        catch (Exception ex)
         {
-            // Corrupt or unreadable settings file: fall back to defaults rather than crashing.
+            // Corrupt or unreadable settings file: log loudly, then fall back to defaults
+            // rather than crashing the app. This is important because v0.2.1's hand-edited
+            // settings.json had "null" for some fields which System.Text.Json rejects.
+            _log?.LogError(ex, "Failed to load settings from {Path}; using defaults.", SettingsPath);
             return new AppSettings();
         }
     }
@@ -88,12 +102,14 @@ public sealed class SettingsService
     public void Update(Action<AppSettings> mutate)
     {
         if (mutate is null) throw new ArgumentNullException(nameof(mutate));
+        // Clone the raw fields (the user-facing properties may normalize defaults and
+        // would drop nulls that we want to round-trip).
         var clone = new AppSettings
         {
-            ThemeMode = Current.ThemeMode,
-            StartWithHpOnlyFilter = Current.StartWithHpOnlyFilter,
-            LastQuickInstallUrl = Current.LastQuickInstallUrl,
-            EwsAddresses = new Dictionary<string, string>(Current.EwsAddresses)
+            ThemeModeRaw = Current.ThemeModeRaw,
+            StartWithHpOnlyFilterRaw = Current.StartWithHpOnlyFilterRaw,
+            LastQuickInstallUrlRaw = Current.LastQuickInstallUrlRaw,
+            EwsAddressesRaw = new Dictionary<string, string>(Current.EwsAddresses)
         };
         mutate(clone);
         Save(clone);

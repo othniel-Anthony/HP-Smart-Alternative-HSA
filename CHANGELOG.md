@@ -11,6 +11,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.2] - 2026-08-23
+
+### Fixed
+
+- **Settings deserialization silently failed on hand-edited `settings.json` files that contained `null` for the three nullable C# properties (`ThemeMode`, `StartWithHpOnlyFilter`, `LastQuickInstallUrl`).** `System.Text.Json` raises `JsonException` for `null` against a non-nullable reference / value type, and the old `SettingsService.LoadFromDisk` swallowed the exception — so the in-memory `AppSettings` was reset to defaults, **dropping the entire `EwsAddresses` map**. Result: every printer's EWS lookup returned `configured=0`, supplies showed "unknown", and the "Open printer EWS" button stayed disabled even after "Set EWS URL…" had been used. v0.2.2 makes the JSON properties tolerate `null` on read (via `*Raw` backing fields with a `??` default in the public accessors) and adds loud `LogError` on load failure so future regressions are visible in the log.
+- **Supplies tab didn't auto-refresh when reopened.** Added an `IsVisibleChanged` handler that calls `LoadPrintersAsync` + `RefreshAsync` whenever the tab transitions to visible. Switching back to Supplies now shows current ink/toner data without a manual click.
+- **"Open printer EWS" and "Remove printer" buttons were clipped off the bottom of the Actions card on normal window sizes.** Wrapped the card's content in a `ScrollViewer` with `MaxHeight="540"` so all buttons are reachable even when the window is short.
+- **"Set EWS URL" 2-column button grid was overflowing the right column on some window widths** (right-column buttons like "Test page" / "Advanced" / "Resume queue" were cut off). Replaced the 2-column `UniformGrid` with a single-column stack; the EWS / Remove buttons now fit comfortably inside the right panel.
+
+### Added
+
+- **EWS status indicator** in the Actions card header: a compact green "✓ Configured" / gray "Not set" pill next to the "EWS" label, with the actual URL displayed below in `BodySmallText` (text-trimmed with ellipsis so it can't push the card wider). The pill updates live when the user changes the EWS URL via "Set EWS URL…", and the underlying `CanExecute` for the Open EWS / Remove printer commands is re-evaluated at the same time.
+- **SettingsService logs loaded settings on startup** (`Settings loaded: Theme=Light HpOnly=True EwsCount=4`) so it's obvious from the log whether the persisted file was actually parsed.
+
+---
+
 ## [0.2.1] - 2026-08-23
 
 ### Added — EWS (Embedded Web Server) consumable source
