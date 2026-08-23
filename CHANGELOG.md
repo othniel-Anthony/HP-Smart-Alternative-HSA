@@ -11,6 +11,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.7] - 2026-08-23
+
+### Fixed
+
+- **"Click on the Drivers or Firmware tab → UAC prompt"** — root cause: v0.2.5's UAC fix was too aggressive. It routed *every* `pnputil` call through the batched-elevated path, including **read-only** operations like `pnputil /enum-drivers` and `pnputil /scan-devices`. So every time the Drivers tab was opened, `EnumerateDriversAsync` (a pure read) would trigger a UAC dialog.
+- v0.2.7 splits `RunAsync` (no UAC; used for reads) from `RunBatchAsync` (UAC; used for writes). `EnumerateDriversAsync` and `RescanAsync` now run unelevated; `RemoveDriverAsync` / `RemoveDeviceAsync` / `AddDriverAsync` still go through the batched UAC path so driver installs / removals still elevate properly.
+
+### Added
+
+- **Auto-discover network printers on launch.** The Printers tab's first-load now auto-runs the mDNS browse so the new "Discovered network printers" expander is populated as soon as the tab opens — no need to click "Discover network" every time.
+- **"Discovered network printers" expander** below the installed-printers list, showing each discovered printer's name, IP, and IPP URL. Lets you see what was found and pick the one to re-add after a cleanup.
+
+### Re: "app should pull the host subnet every launch"
+The subnet scan is currently part of `DiscoverEwsCommand` (per-printer). To make it global on launch, the v0.2.8 plan is to add a background "Network health check" that runs at startup and surfaces a notification "X HP printers found on your network" if any were discovered. Filed for next release.
+
+---
+
 ## [0.2.6] - 2026-08-23
 
 ### Fixed

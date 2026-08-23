@@ -40,6 +40,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- Title row -->
@@ -130,6 +131,29 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!-- v0.2.7: Discovered network printers (mDNS browse results).
+                     Auto-populated on first open of the Printers tab. -->
+                <Expander Grid.Row="3" Header="Discovered network printers" IsExpanded="True"
+                          Margin="0,8,0,0"
+                          Visibility="{Binding Discovered.Count, Converter={StaticResource CountVis}}">
+                    <ListBox Style="{StaticResource M3ListBox}" MaxHeight="160"
+                             ItemsSource="{Binding Discovered}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource BodyMediumText}"/>
+                                    <TextBlock Style="{StaticResource BodySmallText}"
+                                               Foreground="{StaticResource OnSurfaceVariantBrush}">
+                                        <Run Text="{Binding IpAddress}"/>
+                                        <Run Text="  •  "/>
+                                        <Run Text="{Binding IppUrl}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Expander>
             </Grid>
         </Border>
 

@@ -57,6 +57,24 @@ public sealed class AsyncRelayCommand : ICommand
         }
     }
 
+    /// <summary>
+    /// Awaitable variant of <see cref="Execute"/>. Useful for code that wants
+    /// to chain off the command's completion (e.g. a view calling the command
+    /// during its Loaded handler and waiting for the work to finish).
+    /// </summary>
+    public async Task ExecuteAsync(object? parameter)
+    {
+        if (!CanExecute(parameter)) return;
+        _running = true;
+        RaiseCanExecuteChanged();
+        try { await _execute(parameter); }
+        finally
+        {
+            _running = false;
+            RaiseCanExecuteChanged();
+        }
+    }
+
     public event EventHandler? CanExecuteChanged
     {
         add    => CommandManager.RequerySuggested += value;

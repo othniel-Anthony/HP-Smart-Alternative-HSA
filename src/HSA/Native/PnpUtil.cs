@@ -38,7 +38,14 @@ public static class PnpUtil
         var args = force
             ? $"/delete-driver {publishedName} /force"
             : $"/delete-driver {publishedName}";
-        return await RunAsync(args, ct);
+        // v0.2.7: write operation — go through the batched UAC path so it actually
+        // elevates. (RunAsync is now read-only / unelevated.)
+        var batch = await RunBatchAsync(new[] { args }, ct);
+        var line = batch.Lines.FirstOrDefault();
+        return new CommandResult(
+            ExitCode: line?.ExitCode ?? -1,
+            StdOut: line?.StdOut ?? string.Empty,
+            StdErr: line?.Error ?? string.Empty);
     }
 
     /// <summary>
@@ -55,7 +62,13 @@ public static class PnpUtil
         var args = force
             ? $"/remove-device \"{instanceId}\" /force"
             : $"/remove-device \"{instanceId}\"";
-        return await RunAsync(args, ct);
+        // v0.2.7: write operation — go through the batched UAC path.
+        var batch = await RunBatchAsync(new[] { args }, ct);
+        var line = batch.Lines.FirstOrDefault();
+        return new CommandResult(
+            ExitCode: line?.ExitCode ?? -1,
+            StdOut: line?.StdOut ?? string.Empty,
+            StdErr: line?.Error ?? string.Empty);
     }
 
     /// <summary>
@@ -68,7 +81,13 @@ public static class PnpUtil
             throw new ArgumentException("INF path is required.", nameof(infPath));
         if (!File.Exists(infPath))
             throw new FileNotFoundException("INF not found.", infPath);
-        return await RunAsync($"/add-driver \"{infPath}\" /install", ct);
+        // v0.2.7: write operation — go through the batched UAC path.
+        var batch = await RunBatchAsync(new[] { $"/add-driver \"{infPath}\" /install" }, ct);
+        var line = batch.Lines.FirstOrDefault();
+        return new CommandResult(
+            ExitCode: line?.ExitCode ?? -1,
+            StdOut: line?.StdOut ?? string.Empty,
+            StdErr: line?.Error ?? string.Empty);
     }
 
     /// <summary>
@@ -179,20 +198,37 @@ public static class PnpUtil
 
     private static async Task<CommandResult> RunAsync(string args, CancellationToken ct)
     {
-        // v0.2.5: previously used UseShellExecute=false + Verb=runas, which MSDN says
-        // IGNORES the Verb (the UAC prompt is only honored when UseShellExecute=true).
-        // That meant per-driver removal silently ran unelevated and failed with
-        // "Access is denied" without ever showing a UAC prompt. Now we route through
-        // the same batched pattern as RunBatchAsync: a one-command .bat script,
-        // spawned via cmd.exe with UseShellExecute=true + Verb=runas. The temp
-        // .bat redirects stdout/stderr to per-call files and writes ERRORLEVEL to
-        // a third file, so the per-driver caller still gets the exact exit code.
-        var batch = await RunBatchAsync(new[] { args }, ct);
-        var line = batch.Lines.Count > 0 ? batch.Lines[0] : null;
-        return new CommandResult(
-            ExitCode: line?.ExitCode ?? -1,
-            StdOut: line?.StdOut ?? string.Empty,
-            StdErr: line?.Error ?? string.Empty);
+        // v0.2.7: read-only calls (/enum-drivers, /scan-devices) must NOT trigger
+        // a UAC prompt. Previously this method routed everything through the
+        // batched UAC pattern (v0.2.5), which meant every Drivers-tab open
+        // showed a UAC dialog just to enumerate drivers. Now we use a direct
+        // unelevated pnputil invocation for reads, and the batched UAC path
+        // is only used for write operations (RemoveDriverAsync, AddDriverAsync,
+        // etc.) which go through RunBatchAsync directly.
+        var psi = new ProcessStartInfo
+        {
+            FileName = Exe,
+            Arguments = args,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        using var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        try
+        {
+            proc.Start();
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // pnputil might not be on PATH (rare; it's in System32). Surface the
+            // error to the caller rather than silently returning a fake exit code.
+            return new CommandResult(-1, string.Empty, ex.Message);
+        }
+        var stdout = await proc.StandardOutput.ReadToEndAsync(ct);
+        var stderr = await proc.StandardError.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+        return new CommandResult(proc.ExitCode, stdout, stderr);
     }
 
     /// <summary>
