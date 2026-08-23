@@ -13,6 +13,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.10] - 2026-08-23
+
+### Added — Discoverable in-app driver install
+
+Three install paths now live in the Drivers tab, all without leaving the app:
+
+1. **Quick install from URL** — new textbox + "Download & install" button at the top
+   of the Search & download panel. Paste a direct download URL, click once, and HSA
+   downloads to `%LOCALAPPDATA%\HSA\Downloads`, extracts INFs from the package, and
+   runs `pnputil /add-driver /install` on the first INF. The URL is persisted to
+   `settings.json` and pre-fills the box on next launch.
+2. **Reinstall selected driver** — new "Reinstall" button in the Actions card.
+   Re-adds the selected driver's existing INF to the store
+   (`pnputil /add-driver /install`). Useful for "my driver is gone from the device
+   but still in the store" scenarios.
+3. **Install from INF…** — unchanged from v0.1.9, but moved to the top of the
+   Actions card (the most discoverable position) since it's the most common
+   positive action.
+
+### Changed
+- Actions card now leads with install (positive action), then "Removal" section.
+  Destructive actions (Remove selected, Remove ALL HP) are visually grouped
+  under a "Removal" subheader so the user can't accidentally click them while
+  looking for install.
+- DriversViewModel now injects `SettingsService` to persist the Quick install
+  URL between runs (additive to existing settings — old `settings.json` files
+  load fine and just get the new field on next save).
+
+- Bump to 0.1.10.
+
+---
+
 ## [0.1.9] - 2026-08-23
 
 ### Fixed — Driver removal: ONE UAC for the whole batch

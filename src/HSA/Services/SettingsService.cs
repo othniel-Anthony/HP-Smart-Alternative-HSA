@@ -91,7 +91,8 @@ public sealed class SettingsService
         var clone = new AppSettings
         {
             ThemeMode = Current.ThemeMode,
-            StartWithHpOnlyFilter = Current.StartWithHpOnlyFilter
+            StartWithHpOnlyFilter = Current.StartWithHpOnlyFilter,
+            LastQuickInstallUrl = Current.LastQuickInstallUrl
         };
         mutate(clone);
         Save(clone);

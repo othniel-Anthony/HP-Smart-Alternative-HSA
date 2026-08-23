@@ -85,15 +85,27 @@
             </Grid>
         </Border>
 
-        <!-- ===== Actions ===== -->
+        <!-- ===== Actions =====
+             Order matters: the most common positive action (install) goes first so it's
+             always visible without scrolling. The destructive removal actions live in
+             their own section below, with the Full registry cleanup toggle inline. -->
         <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource M3Card}">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                     <TextBlock Text="Actions" Style="{StaticResource TitleLargeText}" Margin="0,0,0,12"/>
 
+                    <!-- Install (positive action first, always visible) -->
+                    <Button Style="{StaticResource M3FilledButton}" Content="Install driver from INF…"
+                            Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,4"/>
+                    <Button Style="{StaticResource M3TonalButton}" Content="Reinstall selected driver"
+                            Command="{Binding ReinstallSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,12"
+                            ToolTip="Re-adds the selected driver's INF to the store (pnputil /add-driver /install)"/>
+
+                    <!-- Removal (destructive) -->
+                    <TextBlock Text="Removal" Style="{StaticResource TitleSmallText}"
+                               Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,4,0,8"/>
                     <Button Style="{StaticResource M3FilledButtonError}" Content="Remove selected driver"
                             Command="{Binding RemoveSelectedCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
-
                     <Button Style="{StaticResource M3FilledButtonError}" Content="Remove ALL HP drivers"
                             Command="{Binding RemoveAllHpCommand}" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
 
@@ -101,7 +113,7 @@
                          PnP devices bound to the driver (clearing Services/Enum entries).
                          All pnputil commands are batched into a single elevated cmd.exe
                          so the user sees ONE UAC prompt even when removing many drivers. -->
-                    <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,12"
+                    <Border Style="{StaticResource M3CardFilled}" Padding="12,10" Margin="0,0,0,8"
                             CornerRadius="12">
                         <StackPanel>
                             <CheckBox Content="Full registry cleanup" IsChecked="{Binding FullRegistryCleanup, Mode=TwoWay}"/>
@@ -114,9 +126,6 @@
                             </TextBlock>
                         </StackPanel>
                     </Border>
-
-                    <Button Style="{StaticResource M3TonalButton}" Content="Install driver from INF…"
-                            Command="{Binding InstallFromInfCommand}" HorizontalAlignment="Stretch" Margin="0,4,0,0"/>
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -128,14 +137,33 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Text="Search &amp; download drivers"
                            Style="{StaticResource TitleLargeText}" Margin="0,0,0,8"/>
 
-                <!-- Search input row -->
+                <!-- Quick install from URL — paste a direct download link and click
+                     "Download &amp; install" to do both steps in one click. The URL is
+                     saved between runs so the user can re-run quickly. -->
                 <Grid Grid.Row="1" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             x:Name="QuickInstallUrl"
+                             Text="{Binding QuickInstallUrl, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="10,8" FontSize="13"
+                             ToolTip="Direct download URL for a driver (HP support site, MS catalog, etc.). One-click install."/>
+                    <Button Grid.Column="1" Style="{StaticResource M3FilledButton}" Content="Download &amp; install"
+                            Command="{Binding QuickInstallCommand}" Margin="8,0,0,0"
+                            ToolTip="Downloads the file to %LOCALAPPDATA%\HSA\Downloads and runs pnputil /add-driver on the first INF inside."/>
+                </Grid>
+
+                <!-- Search input row -->
+                <Grid Grid.Row="2" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -156,11 +184,11 @@
                             Command="{Binding OpenMicrosoftUpdateCatalogCommand}" Margin="8,0,0,0"/>
                 </Grid>
 
-                <TextBlock Grid.Row="2" Text="{Binding SearchStatus}" Style="{StaticResource BodySmallText}"
+                <TextBlock Grid.Row="3" Text="{Binding SearchStatus}" Style="{StaticResource BodySmallText}"
                            Foreground="{StaticResource OnSurfaceVariantBrush}" Margin="0,0,0,8"/>
 
                 <!-- Results list (left) and download/install panel (right) -->
-                <Grid Grid.Row="3">
+                <Grid Grid.Row="4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="12"/>

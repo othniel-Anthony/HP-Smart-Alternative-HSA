@@ -10,6 +10,7 @@ public sealed class DriversViewModel : ObservableObject
 {
     private readonly IDriverService _drivers;
     private readonly IDialogService _dialog;
+    private readonly SettingsService _settings;
     private readonly ILogger<DriversViewModel> _log;
 
     public ObservableCollection<DriverInfo> Drivers { get; } = new();
@@ -159,10 +160,30 @@ public sealed class DriversViewModel : ObservableObject
         }
     }
 
+    // ===== Quick install (paste a URL, one click does everything) =====
+    private string _quickInstallUrl = string.Empty;
+    public string QuickInstallUrl
+    {
+        get => _quickInstallUrl;
+        set
+        {
+            if (SetField(ref _quickInstallUrl, value ?? string.Empty))
+            {
+                // Persist so the next launch re-fills the box.
+                try { _settings.Update(s => s.LastQuickInstallUrl = _quickInstallUrl); } catch { /* best-effort */ }
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+    public bool CanQuickInstall =>
+        !string.IsNullOrWhiteSpace(_quickInstallUrl) && !IsDownloading && !IsInstalling;
+
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand RemoveSelectedCommand { get; }
     public AsyncRelayCommand RemoveAllHpCommand { get; }
     public AsyncRelayCommand InstallFromInfCommand { get; }
+    public AsyncRelayCommand ReinstallSelectedCommand { get; }
+    public AsyncRelayCommand QuickInstallCommand { get; }
     public AsyncRelayCommand SearchWindowsUpdateCommand { get; }
     public AsyncRelayCommand DownloadSelectedCommand { get; }
     public AsyncRelayCommand InstallSelectedDownloadCommand { get; }
@@ -170,16 +191,26 @@ public sealed class DriversViewModel : ObservableObject
     public RelayCommand OpenMicrosoftUpdateCatalogCommand { get; }
     public RelayCommand ClearDownloadCommand { get; }
 
-    public DriversViewModel(IDriverService drivers, IDialogService dialog, ILogger<DriversViewModel> log)
+    public DriversViewModel(
+        IDriverService drivers,
+        IDialogService dialog,
+        SettingsService settings,
+        ILogger<DriversViewModel> log)
     {
         _drivers = drivers;
         _dialog = dialog;
+        _settings = settings;
         _log = log;
+        _quickInstallUrl = settings.Current.LastQuickInstallUrl ?? string.Empty;
 
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         RemoveSelectedCommand = new AsyncRelayCommand(RemoveSelectedAsync, () => SelectedDriver is not null);
         RemoveAllHpCommand = new AsyncRelayCommand(RemoveAllHpAsync);
         InstallFromInfCommand = new AsyncRelayCommand(InstallFromInfAsync);
+        ReinstallSelectedCommand = new AsyncRelayCommand(
+            ReinstallSelectedAsync,
+            () => SelectedDriver is not null && !string.IsNullOrEmpty(SelectedDriver.InfPath) && !IsInstalling);
+        QuickInstallCommand = new AsyncRelayCommand(QuickInstallAsync, () => CanQuickInstall);
         SearchWindowsUpdateCommand = new AsyncRelayCommand(
             SearchWindowsUpdateAsync,
             () => !string.IsNullOrWhiteSpace(SearchKeyword) && !IsSearching);
@@ -577,6 +608,150 @@ public sealed class DriversViewModel : ObservableObject
         catch (Exception)
         {
             // best-effort: swallow - we already logged earlier
+        }
+    }
+
+    // ===== Quick install (URL -> download -> install first INF) =====
+    private async Task QuickInstallAsync()
+    {
+        var url = QuickInstallUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (IsDownloading || IsInstalling) return;
+
+        AppendLog($"[INFO] Quick install from {url}");
+
+        // 1) Download
+        IsDownloading = true;
+        DownloadPercent = 0;
+        DownloadedDriver? downloaded = null;
+        try
+        {
+            var progress = new Progress<(long Done, long Total, double Percent)>(p => DownloadPercent = p.Percent);
+            // Auto-derive a filename from the URL (last path segment + extension).
+            var pathSeg = url;
+            try
+            {
+                var u = new Uri(url);
+                pathSeg = u.Segments.Length > 0 ? u.Segments[^1] : "driver.zip";
+                pathSeg = Uri.UnescapeDataString(pathSeg);
+                if (string.IsNullOrWhiteSpace(pathSeg) || !pathSeg.Contains('.'))
+                    pathSeg = "driver-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip";
+            }
+            catch { pathSeg = "driver-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip"; }
+
+            downloaded = await _drivers.DownloadFromUrlAsync(url, pathSeg, progress, CancellationToken.None);
+            AppendLog($"[OK] downloaded {downloaded.FilePath} ({downloaded.SizeBytes:N0} bytes)");
+            if (downloaded.ContainedInfs.Count > 0)
+                AppendLog($"      contains {downloaded.ContainedInfs.Count} INF file(s) - installing first");
+            else if (downloaded.IsContainer)
+                AppendLog($"      no .inf files found in container - install will not run");
+            else
+                AppendLog($"      direct file - INF install needs an .inf, not a {Path.GetExtension(downloaded.FilePath)}");
+            DownloadedDriver = downloaded;
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Quick install download failed");
+            AppendLog($"[FAIL] download: {ex.Message}");
+            _dialog.ShowError("Download failed", ex);
+            return;
+        }
+        finally { IsDownloading = false; }
+
+        // 2) Install first INF (if any)
+        if (downloaded is null || downloaded.ContainedInfs.Count == 0)
+        {
+            SearchStatus = "Download complete, but no INFs found. Open the Downloads folder to inspect manually.";
+            return;
+        }
+        var firstInf = downloaded.ContainedInfs[0];
+        if (downloaded.ContainedInfs.Count > 1
+            && !_dialog.ConfirmDestructive(
+                "Multiple INFs found",
+                $"{downloaded.ContainedInfs.Count} INF files were found in the package:\n\n" +
+                string.Join("\n", downloaded.ContainedInfs.Select(p => "  - " + Path.GetFileName(p))) +
+                $"\n\nInstall '{Path.GetFileName(firstInf)}' now? You can install the rest manually from " +
+                "the Downloads folder if needed.",
+                "Install first INF"))
+        {
+            SearchStatus = "Downloaded, but install cancelled.";
+            return;
+        }
+
+        IsInstalling = true;
+        InstallIsIndeterminate = true;
+        try
+        {
+            StatusMessage = $"Installing {Path.GetFileName(firstInf)} (admin UAC will appear)…";
+            var res = await _drivers.InstallFromInfAsync(firstInf, CancellationToken.None);
+            AppendLog($"[{(res.Success ? "OK" : "FAIL")}] add-driver {firstInf} exit={res.ExitCode}");
+            StatusMessage = res.Success
+                ? $"Installed {Path.GetFileName(firstInf)}"
+                : $"Install failed (exit {res.ExitCode}): {res.StdErr}";
+            if (!res.Success)
+                _dialog.ShowError("Install failed", $"exit={res.ExitCode}\n{res.StdErr}");
+            SearchStatus = res.Success
+                ? $"Installed {Path.GetFileName(firstInf)} successfully."
+                : $"Install of {Path.GetFileName(firstInf)} failed (see log).";
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Quick install install step failed");
+            AppendLog($"[FAIL] install: {ex.Message}");
+            _dialog.ShowError("Install failed", ex);
+        }
+        finally
+        {
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
+        }
+    }
+
+    // ===== Reinstall selected driver (re-add the selected driver's INF to the store) =====
+    private async Task ReinstallSelectedAsync()
+    {
+        if (SelectedDriver is null) return;
+        var d = SelectedDriver;
+        if (string.IsNullOrEmpty(d.InfPath) || !File.Exists(d.InfPath))
+        {
+            _dialog.ShowError("Cannot reinstall",
+                $"No on-disk INF for '{d.OriginalName}'. The driver may have been removed from the store already. " +
+                "Use 'Search & download drivers' to find and install a fresh copy.");
+            return;
+        }
+
+        if (!_dialog.ConfirmDestructive(
+            "Reinstall driver",
+            $"Re-add '{d.OriginalName}' to the driver store from:\n  {d.InfPath}\n\n" +
+            "This runs pnputil /add-driver /install. Admin UAC will appear. Continue?",
+            "Reinstall"))
+            return;
+
+        IsInstalling = true;
+        InstallIsIndeterminate = true;
+        try
+        {
+            StatusMessage = $"Reinstalling {d.OriginalName} (admin UAC will appear)…";
+            var res = await _drivers.InstallFromInfAsync(d.InfPath, CancellationToken.None);
+            AppendLog($"[{(res.Success ? "OK" : "FAIL")}] reinstall {d.InfPath} exit={res.ExitCode}");
+            StatusMessage = res.Success
+                ? $"Reinstalled {d.OriginalName}"
+                : $"Reinstall failed (exit {res.ExitCode}): {res.StdErr}";
+            if (!res.Success)
+                _dialog.ShowError("Reinstall failed", $"exit={res.ExitCode}\n{res.StdErr}");
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Reinstall failed");
+            AppendLog($"[FAIL] reinstall: {ex.Message}");
+            _dialog.ShowError("Reinstall failed", ex);
+        }
+        finally
+        {
+            IsInstalling = false;
+            InstallIsIndeterminate = true;
         }
     }
 }
