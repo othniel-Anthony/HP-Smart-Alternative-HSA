@@ -1,0 +1,87 @@
+<Window x:Class="PrintHub.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid x:Name="Root">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid x:Name="AppTitleBar" Height="40" Padding="12,0,140,0" ColumnSpacing="10">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+      <Image Source="ms-appx:///Assets/HSA.png" Width="18" Height="18" VerticalAlignment="Center" />
+      <TextBlock x:Name="TitleText" Grid.Column="1" Text="HP Smart Alternative (HSA)" VerticalAlignment="Center" FontSize="12" />
+    </Grid>
+    <NavigationView x:Name="Nav" Grid.Row="1"
+                    PaneDisplayMode="Auto"
+                    OpenPaneLength="220"
+                    IsBackButtonVisible="Collapsed"
+                    IsSettingsVisible="False"
+                    SelectionChanged="Nav_SelectionChanged">
+      <NavigationView.MenuItems>
+        <NavigationViewItem Content="Home" Tag="home" Icon="Home" />
+        <NavigationViewItem Content="Print" Tag="print" Icon="Print" />
+        <NavigationViewItem Content="Scan" Tag="scan">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE8FE;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Content="Copy" Tag="copy">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE8C8;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Content="Shortcuts" Tag="shortcuts">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE945;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItemSeparator />
+        <NavigationViewItem Content="Printer &amp; supplies" Tag="printer">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE7F8;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Content="Printer web page" Tag="web">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.MenuItems>
+      <NavigationView.FooterMenuItems>
+        <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />
+      </NavigationView.FooterMenuItems>
+
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- persistent printer bar -->
+        <Border Grid.Row="0" Padding="24,12,24,12" BorderThickness="0,0,0,1" BorderBrush="{StaticResource PastelLineBrush}">
+          <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" MinWidth="200" MaxWidth="340" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <FontIcon Glyph="&#xE749;" FontSize="22" VerticalAlignment="Center" />
+            <ComboBox x:Name="PrinterCombo" Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="200" MaxWidth="340" PlaceholderText="Choose a printer"
+                      SelectionChanged="PrinterCombo_SelectionChanged" AutomationProperties.Name="Printer" />
+            <Button x:Name="RefreshButton" Grid.Column="2" Click="Refresh_Click" ToolTipService.ToolTip="Search for printers again" AutomationProperties.Name="Search for printers">
+              <FontIcon Glyph="&#xE72C;" />
+            </Button>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Ellipse x:Name="StateDot" Width="10" Height="10" Fill="Gray" />
+              <TextBlock x:Name="StateText" Text="No printer selected" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+              <ProgressRing x:Name="BusyRing" Width="18" Height="18" IsActive="False" />
+            </StackPanel>
+            <Button Grid.Column="4" Click="AddPrinter_Click" ToolTipService.ToolTip="Add a printer by its IP address or host name" AutomationProperties.Name="Add printer by address">
+              <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock Text="Add by IP" /></StackPanel>
+            </Button>
+          </Grid>
+        </Border>
+
+        <Frame x:Name="ContentFrame" Grid.Row="1" />
+
+        <InfoBar x:Name="ToastBar" Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24" MaxWidth="720" IsOpen="False" IsClosable="True" />
+      </Grid>
+    </NavigationView>
+  </Grid>
+</Window>

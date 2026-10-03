@@ -1,0 +1,72 @@
+<Page x:Class="PrintHub.App.Pages.PrinterPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+  <ScrollViewer>
+    <StackPanel Padding="32,24" Spacing="20" MaxWidth="1100" HorizontalAlignment="Left">
+      <TextBlock x:Name="Heading" Style="{StaticResource TitleTextBlockStyle}" Text="Printer" />
+      <StackPanel x:Name="AlertsPanel" Spacing="8" />
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <TextBlock Text="Ink and toner" Style="{StaticResource SectionTitle}" />
+          <StackPanel x:Name="SuppliesPanel" />
+          <TextBlock x:Name="SuppliesNote" Opacity="0.7" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel>
+          <TextBlock Text="Information" Style="{StaticResource SectionTitle}" />
+          <Grid x:Name="InfoGrid" ColumnSpacing="16" RowSpacing="4">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="170" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="Connection" Style="{StaticResource SectionTitle}" />
+          <TextBlock x:Name="ConnectionText" TextWrapping="Wrap" />
+          <ToggleSwitch x:Name="PreferUsbSwitch" Header="Prefer USB when the printer is connected by both USB and network" Toggled="PreferUsb_Toggled" />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Maintenance and tools" Style="{StaticResource SectionTitle}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="TestPageButton" AutomationProperties.Name="Print diagnostic page" Click="TestPage_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8A5;" FontSize="16" /><TextBlock Text="Print diagnostic page" /></StackPanel></Button>
+            <Button x:Name="IdentifyButton" AutomationProperties.Name="Find this printer" Click="Identify_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE789;" FontSize="16" /><TextBlock Text="Find this printer (flash / beep)" /></StackPanel></Button>
+            <Button x:Name="RefreshButton" AutomationProperties.Name="Refresh status" Click="Refresh_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72C;" FontSize="16" /><TextBlock Text="Refresh status" /></StackPanel></Button>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="PrefsButton" Click="Prefs_Click" Content="Printing preferences" />
+            <Button x:Name="QueueButton" Click="Queue_Click" Content="Open print queue" />
+            <Button x:Name="PropsButton" Click="Props_Click" Content="Printer properties" />
+            <Button x:Name="DefaultButton" Click="Default_Click" Content="Make default printer" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Click="Web_Click" Content="Open printer web page" />
+            <Button Click="Report_Click" Content="Copy support report" />
+          </StackPanel>
+          <TextBlock Opacity="0.7" TextWrapping="Wrap"
+                     Text="Cleaning the print head, aligning cartridges and deep-clean routines are provided by the manufacturer: open Printing preferences and look for a Maintenance / Services / Utilities tab, or use the printer web page and open its Tools or Settings section." />
+        </StackPanel>
+      </Border>
+
+      <Border x:Name="JobsCard" Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="8">
+          <Grid>
+            <TextBlock Text="Jobs waiting on the printer" Style="{StaticResource SectionTitle}" />
+            <Button HorizontalAlignment="Right" Click="Jobs_Click" Content="Refresh" />
+          </Grid>
+          <StackPanel x:Name="JobsPanel" Spacing="4" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

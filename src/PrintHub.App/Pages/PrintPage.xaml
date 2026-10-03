@@ -1,0 +1,81 @@
+<Page x:Class="PrintHub.App.Pages.PrintPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Loaded="Page_Loaded" Unloaded="Page_Unloaded" AllowDrop="True" DragOver="Drop_DragOver" Drop="Drop_Drop">
+  <Grid Padding="32,24" ColumnSpacing="24">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="380" />
+    </Grid.ColumnDefinitions>
+
+    <!-- files + preview -->
+    <Grid RowSpacing="12">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+      <TextBlock Text="Print" Style="{StaticResource TitleTextBlockStyle}" />
+      <Border Grid.Row="1" Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Click="Browse_Click" AutomationProperties.Name="Add documents or photos"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8E5;" FontSize="16" /><TextBlock Text="Add documents or photos" /></StackPanel></Button>
+            <Button x:Name="ClearButton" Click="Clear_Click" Content="Clear list" />
+            <TextBlock Text="or drop files anywhere in this window" VerticalAlignment="Center" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <ListView x:Name="FileList" MaxHeight="150" SelectionMode="Single" SelectionChanged="FileList_SelectionChanged" />
+          <TextBlock x:Name="SupportedNote" Opacity="0.6" FontSize="12" TextWrapping="Wrap"
+                     Text="PDF, JPG, PNG, BMP, GIF and TIFF print directly. Other files (Word, text, …) are sent to the app that opens them." />
+        </StackPanel>
+      </Border>
+      <Border Grid.Row="2" Style="{StaticResource CardStyle}">
+        <Grid RowSpacing="8">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <Image x:Name="PreviewImage" Stretch="Uniform" />
+          <TextBlock x:Name="PreviewHint" Text="Add a file to see a preview" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" />
+          <StackPanel x:Name="PageNav" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12" Visibility="Collapsed">
+            <Button Click="PrevPage_Click" AutomationProperties.Name="Previous page"><FontIcon Glyph="&#xE76B;" FontSize="14" /></Button>
+            <TextBlock x:Name="PageLabel" VerticalAlignment="Center" />
+            <Button Click="NextPage_Click" AutomationProperties.Name="Next page"><FontIcon Glyph="&#xE76C;" FontSize="14" /></Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- options -->
+    <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+      <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ScrollViewer>
+          <StackPanel Spacing="12" Padding="0,0,12,0">
+            <TextBlock Text="Options" Style="{StaticResource SectionTitle}" />
+            <NumberBox x:Name="CopiesBox" Header="Copies" Value="1" Minimum="1" Maximum="99" SpinButtonPlacementMode="Inline" />
+            <ComboBox x:Name="ColorCombo" Header="Colour" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="DuplexCombo" Header="Two-sided" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="PaperCombo" Header="Paper size" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="ScaleCombo" Header="Fit" HorizontalAlignment="Stretch" SelectionChanged="ScaleCombo_SelectionChanged" />
+            <ComboBox x:Name="PhotoSizeCombo" Header="Photo size" HorizontalAlignment="Stretch" Visibility="Collapsed" />
+            <ComboBox x:Name="QualityCombo" Header="Quality" HorizontalAlignment="Stretch" />
+            <TextBox x:Name="PagesBox" Header="Pages" PlaceholderText="All  (or e.g. 1-3, 5)" />
+            <CheckBox x:Name="BorderlessCheck" Content="No margins (borderless)" />
+            <ComboBox x:Name="RouteCombo" Header="Send using" HorizontalAlignment="Stretch" />
+            <TextBlock x:Name="RouteNote" Opacity="0.65" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="1" Spacing="8">
+          <Button x:Name="PrintButton" AutomationProperties.Name="Print" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="Print_Click">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center"><FontIcon Glyph="&#xE749;" FontSize="16" /><TextBlock Text="Print" /></StackPanel>
+          </Button>
+          <ProgressBar x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" />
+          <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.8" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Page>

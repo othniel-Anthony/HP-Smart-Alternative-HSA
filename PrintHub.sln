@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D9A6865B-5F76-4253-82F8-5B0A33EB7B0C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrintHub.Core", "src\PrintHub.Core\PrintHub.Core.csproj", "{474CDB94-3163-4D2A-AABA-3345C0804829}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrintHub.Probe", "src\PrintHub.Probe\PrintHub.Probe.csproj", "{7795F027-5EFD-4912-9137-1379B1837822}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{EC820A7B-EC49-441D-BB76-48FFA0469A4E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrintHub.Tests", "tests\PrintHub.Tests\PrintHub.Tests.csproj", "{509E9C89-7429-404C-8882-727457376658}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FakePrinter", "tests\FakePrinter\FakePrinter.csproj", "{640B2E8C-171B-47C9-A1CF-F42315C628FE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{474CDB94-3163-4D2A-AABA-3345C0804829}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{474CDB94-3163-4D2A-AABA-3345C0804829}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{474CDB94-3163-4D2A-AABA-3345C0804829}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{474CDB94-3163-4D2A-AABA-3345C0804829}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7795F027-5EFD-4912-9137-1379B1837822}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7795F027-5EFD-4912-9137-1379B1837822}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7795F027-5EFD-4912-9137-1379B1837822}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7795F027-5EFD-4912-9137-1379B1837822}.Release|Any CPU.Build.0 = Release|Any CPU
+		{509E9C89-7429-404C-8882-727457376658}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{509E9C89-7429-404C-8882-727457376658}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{509E9C89-7429-404C-8882-727457376658}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{509E9C89-7429-404C-8882-727457376658}.Release|Any CPU.Build.0 = Release|Any CPU
+		{640B2E8C-171B-47C9-A1CF-F42315C628FE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{640B2E8C-171B-47C9-A1CF-F42315C628FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{640B2E8C-171B-47C9-A1CF-F42315C628FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{640B2E8C-171B-47C9-A1CF-F42315C628FE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{474CDB94-3163-4D2A-AABA-3345C0804829} = {D9A6865B-5F76-4253-82F8-5B0A33EB7B0C}
+		{7795F027-5EFD-4912-9137-1379B1837822} = {D9A6865B-5F76-4253-82F8-5B0A33EB7B0C}
+		{509E9C89-7429-404C-8882-727457376658} = {EC820A7B-EC49-441D-BB76-48FFA0469A4E}
+		{640B2E8C-171B-47C9-A1CF-F42315C628FE} = {EC820A7B-EC49-441D-BB76-48FFA0469A4E}
+	EndGlobalSection
+EndGlobal

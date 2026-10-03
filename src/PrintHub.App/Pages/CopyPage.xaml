@@ -1,0 +1,47 @@
+<Page x:Class="PrintHub.App.Pages.CopyPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+  <ScrollViewer>
+    <StackPanel Padding="32,24" Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+      <TextBlock Text="Copy" Style="{StaticResource TitleTextBlockStyle}" />
+      <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" Severity="Warning" />
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="14">
+          <Grid ColumnSpacing="16" RowSpacing="14">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <NumberBox x:Name="CopiesBox" Header="Copies" Value="1" Minimum="1" Maximum="99" SpinButtonPlacementMode="Inline" />
+            <ComboBox x:Name="ColorCombo" Grid.Column="1" Header="Colour" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="SourceCombo" Grid.Row="1" Header="Original is on" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="QualityCombo" Grid.Row="1" Grid.Column="1" Header="Quality" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="PaperCombo" Grid.Row="2" Header="Paper size" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="ScaleCombo" Grid.Row="2" Grid.Column="1" Header="Size" HorizontalAlignment="Stretch" />
+          </Grid>
+          <ComboBox x:Name="DuplexCombo" Header="Two-sided copy" HorizontalAlignment="Left" MinWidth="240" />
+          <CheckBox x:Name="EnhanceCheck" Content="Make text sharper and the paper whiter" IsChecked="True" />
+          <CheckBox x:Name="IdCheck" Content="Copy an ID card (both sides on one page)" Checked="IdCheck_Changed" Unchecked="IdCheck_Changed" />
+          <TextBlock x:Name="IdNote" Visibility="Collapsed" Opacity="0.7" TextWrapping="Wrap"
+                     Text="Place the front of the card on the scanner glass, then press Start. You'll be asked to flip it for the back." />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button x:Name="StartButton" AutomationProperties.Name="Start copy" Style="{StaticResource AccentButtonStyle}" Click="Start_Click" MinWidth="160">
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center"><FontIcon Glyph="&#xE8C8;" FontSize="16" /><TextBlock Text="Start copy" /></StackPanel>
+        </Button>
+        <Button x:Name="CancelButton" Click="Cancel_Click" Content="Cancel" Visibility="Collapsed" />
+        <ProgressRing x:Name="Ring" Width="24" Height="24" IsActive="False" />
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

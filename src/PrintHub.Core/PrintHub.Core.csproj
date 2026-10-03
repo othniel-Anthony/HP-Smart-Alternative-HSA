@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><InternalsVisibleTo Include="PrintHub.Tests" /></ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PrintHub.Core</RootNamespace>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the colour test page printed by the Home screen's "Print test page" button -->
+    <EmbeddedResource Include="Resources\print-color-test-page-basic-1.pdf" LogicalName="print-color-test-page-basic-1.pdf" />
+  </ItemGroup>
+</Project>

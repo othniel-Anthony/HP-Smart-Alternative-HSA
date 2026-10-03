@@ -1,0 +1,139 @@
+<Page x:Class="PrintHub.App.Pages.ScanPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="using:PrintHub.App.Pages"
+      Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+  <Grid Padding="24,16,24,16" ColumnSpacing="16">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="300" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <!-- ============ settings ============ -->
+    <Border Style="{StaticResource CardStyle}">
+      <ScrollViewer>
+        <StackPanel Spacing="10">
+          <TextBlock Text="Scan" Style="{StaticResource TitleTextBlockStyle}" />
+          <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" Severity="Warning" />
+          <ComboBox x:Name="PresetCombo" Header="Preset" HorizontalAlignment="Stretch" SelectionChanged="PresetCombo_SelectionChanged" />
+          <ComboBox x:Name="SourceCombo" Header="Scan from" HorizontalAlignment="Stretch" />
+          <ComboBox x:Name="ColorCombo" Header="Colour" HorizontalAlignment="Stretch" />
+          <ComboBox x:Name="DpiCombo" Header="Resolution (dpi)" HorizontalAlignment="Stretch" />
+          <ComboBox x:Name="PaperCombo" Header="Original size" HorizontalAlignment="Stretch" />
+          <ComboBox x:Name="FormatCombo" Header="Save as" HorizontalAlignment="Stretch" />
+          <CheckBox x:Name="AutoCropCheck" Content="Crop to the document automatically" />
+          <CheckBox x:Name="StraightenCheck" Content="Straighten crooked pages" />
+          <CheckBox x:Name="EnhanceCheck" Content="Sharpen text, whiten paper" />
+          <CheckBox x:Name="OcrCheck" Content="Make PDF searchable (text recognition)" />
+          <Button x:Name="ScanButton" AutomationProperties.Name="Scan" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="Scan_Click">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center"><FontIcon Glyph="&#xE8FE;" FontSize="16" /><TextBlock x:Name="ScanButtonText" Text="Scan" /></StackPanel>
+          </Button>
+          <Button x:Name="CancelButton" HorizontalAlignment="Stretch" Click="Cancel_Click" Content="Cancel" Visibility="Collapsed" />
+          <ProgressBar x:Name="Progress" IsIndeterminate="True" Visibility="Collapsed" />
+          <TextBlock x:Name="StatusText" TextWrapping="Wrap" Opacity="0.8" />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!-- ============ workspace ============ -->
+    <Grid Grid.Column="1" RowSpacing="8">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <CommandBar x:Name="EditBar" DefaultLabelPosition="Right" Background="Transparent" IsOpen="False" HorizontalAlignment="Stretch" OverflowButtonVisibility="Auto">
+        <AppBarButton Label="Left" Click="RotateLeft_Click" ToolTipService.ToolTip="Rotate left">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE7AD;" /></AppBarButton.Icon>
+        </AppBarButton>
+        <AppBarButton Label="Right" Icon="Rotate" Click="RotateRight_Click" ToolTipService.ToolTip="Rotate right" />
+        <AppBarButton Label="Crop" Icon="Crop" Click="Crop_Click" ToolTipService.ToolTip="Crop the page" />
+        <AppBarButton Label="Auto-crop" Click="AutoCrop_Click" ToolTipService.ToolTip="Crop to the detected document">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE9A6;" /></AppBarButton.Icon>
+        </AppBarButton>
+        <AppBarButton Label="Straighten" Click="Straighten_Click" ToolTipService.ToolTip="Fix a crooked scan">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE7C3;" /></AppBarButton.Icon>
+        </AppBarButton>
+        <AppBarButton Label="Filter" ToolTipService.ToolTip="Colour, grayscale, black and white">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE790;" /></AppBarButton.Icon>
+          <AppBarButton.Flyout>
+            <MenuFlyout>
+              <MenuFlyoutItem Text="Original" Tag="Original" Click="Filter_Click" />
+              <MenuFlyoutItem Text="Enhanced document" Tag="Enhance" Click="Filter_Click" />
+              <MenuFlyoutItem Text="Grayscale" Tag="Grayscale" Click="Filter_Click" />
+              <MenuFlyoutItem Text="Black and white" Tag="BlackAndWhite" Click="Filter_Click" />
+            </MenuFlyout>
+          </AppBarButton.Flyout>
+        </AppBarButton>
+        <AppBarButton Label="Adjust" ToolTipService.ToolTip="Brightness and contrast">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE706;" /></AppBarButton.Icon>
+          <AppBarButton.Flyout>
+            <Flyout>
+              <StackPanel Width="260" Spacing="8">
+                <Slider x:Name="BrightnessSlider" Header="Brightness" Minimum="-100" Maximum="100" Value="0" ValueChanged="Adjust_Changed" />
+                <Slider x:Name="ContrastSlider" Header="Contrast" Minimum="-100" Maximum="100" Value="0" ValueChanged="Adjust_Changed" />
+                <Button Content="Reset" Click="AdjustReset_Click" />
+              </StackPanel>
+            </Flyout>
+          </AppBarButton.Flyout>
+        </AppBarButton>
+        <AppBarSeparator />
+        <AppBarButton Label="Add text" Click="AddText_Click" ToolTipService.ToolTip="Type text onto the page">
+          <AppBarButton.Icon><FontIcon Glyph="&#xE8D2;" /></AppBarButton.Icon>
+        </AppBarButton>
+        <AppBarButton Label="Sign" Icon="Edit" Click="Sign_Click" ToolTipService.ToolTip="Draw a signature on the page" />
+        <AppBarSeparator />
+        <AppBarButton Label="Undo edits" Icon="Undo" Click="ResetEdits_Click" ToolTipService.ToolTip="Remove all edits from this page" />
+        <AppBarButton Label="Delete page" Icon="Delete" Click="DeletePage_Click" />
+      </CommandBar>
+
+      <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="8">
+        <Grid>
+          <Image x:Name="Preview" Stretch="Uniform" />
+          <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="420">
+            <FontIcon Glyph="&#xE8FE;" FontSize="48" Opacity="0.5" />
+            <TextBlock x:Name="EmptyText" Text="Put your document on the scanner glass or in the feeder, choose a preset and press Scan." TextAlignment="Center" TextWrapping="Wrap" Opacity="0.7" />
+          </StackPanel>
+          <ProgressRing x:Name="BusyRing" Width="56" Height="56" IsActive="False" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <ListView x:Name="Strip" Grid.Row="2" ItemsSource="{x:Bind Pages}" Height="150" SelectionMode="Single"
+                CanReorderItems="True" AllowDrop="True" SelectionChanged="Strip_SelectionChanged"
+                ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+        <ListView.ItemsPanel>
+          <ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+        </ListView.ItemsPanel>
+        <ListView.ItemTemplate>
+          <DataTemplate x:DataType="local:PageVm">
+            <StackPanel Spacing="2" Width="100">
+              <Image Source="{x:Bind Thumb, Mode=OneWay}" Height="110" Stretch="Uniform" />
+              <TextBlock Text="{x:Bind Label, Mode=OneWay}" HorizontalAlignment="Center" FontSize="12" />
+            </StackPanel>
+          </DataTemplate>
+        </ListView.ItemTemplate>
+      </ListView>
+
+      <InfoBar x:Name="SavedBar" Grid.Row="3" IsOpen="False" Severity="Success" IsClosable="True">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <HyperlinkButton Content="Open" Click="OpenSaved_Click" />
+          <HyperlinkButton Content="Show in folder" Click="ShowSaved_Click" />
+          <HyperlinkButton Content="Share…" Click="ShareSaved_Click" />
+        </StackPanel>
+      </InfoBar>
+
+      <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8">
+        <Button x:Name="SaveButton" AutomationProperties.Name="Save" Style="{StaticResource AccentButtonStyle}" Click="Save_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74E;" FontSize="16" /><TextBlock Text="Save" /></StackPanel></Button>
+        <Button x:Name="SaveAsButton" Click="SaveAs_Click" Content="Save as…" />
+        <Button x:Name="PrintButton" AutomationProperties.Name="Print" Click="Print_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE749;" FontSize="16" /><TextBlock Text="Print" /></StackPanel></Button>
+        <Button x:Name="TextButton" AutomationProperties.Name="Copy text" Click="Text_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8C1;" FontSize="16" /><TextBlock Text="Copy text" /></StackPanel></Button>
+        <Button x:Name="CameraButton" AutomationProperties.Name="Camera" Click="Camera_Click"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE722;" FontSize="16" /><TextBlock Text="Camera" /></StackPanel></Button>
+        <Button x:Name="ImportButton" Click="Import_Click" Content="Add from file…" />
+        <Button x:Name="ClearButton" Click="Clear_Click" Content="Clear all" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Page>

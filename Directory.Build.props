@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.10.3</Version>
+    <Product>HP Smart Alternative (HSA)</Product>
+    <Authors>HSA</Authors>
+    <Description>An alternative to HP Smart for Windows: discover, print, scan, copy and manage printers over network and USB.</Description>
+  </PropertyGroup>
+</Project>
