@@ -1,6 +1,6 @@
 <#
   Builds the release:  .\build.ps1
-  1. runs the unit tests
+  1. runs the unit tests (only if a tests folder is present)
   2. publishes ONE self-contained file:   dist\HSA-<version>-win-x64.exe   (portable, runs on its own)
   3. zips it with the installer scripts:  dist\HSA-<version>-win-x64.zip
 
@@ -26,10 +26,13 @@ Set-Location $PSScriptRoot
 $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
 Write-Host "== HP Smart Alternative (HSA) $version =="
 
-if (-not $SkipTests) {
+# The unit tests are not part of the public repository; when the folder is present (a developer checkout) run them first.
+if ($SkipTests) { Write-Host 'Skipping tests.' }
+elseif (Test-Path tests/PrintHub.Tests) {
   dotnet test tests/PrintHub.Tests --nologo -v q
   if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 }
+else { Write-Host 'No tests folder here: building without running tests.' }
 
 # Only replace what this build produces: earlier releases in dist\ stay (and one may be running right now).
 New-Item -ItemType Directory -Force dist | Out-Null

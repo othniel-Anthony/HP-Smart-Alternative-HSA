@@ -45,14 +45,14 @@ HP Smart has a few features that depend on HP's online services, and those can't
 
 It hasn't been tried on a wide range of real printers yet, so here is what has and hasn't been checked.
 
-**Tested automatically** (there are 81 unit tests plus 164 checks that drive the real app):
+**Checked with automated tests during development** (unit tests plus tests that drove the real app; they are not included in this repository):
 - Finding printers on the network, adding one by IP address, reading ink levels and status.
 - Printing through a real Windows driver (the "Microsoft Print to PDF" printer), and printing straight to a printer over IPP, including every option.
 - Scanning from the glass, the feeder and both sides, against a simulated scanner, with the "busy, try again" behaviour real scanners show.
 - Editing, text recognition, searchable PDFs, copy, shortcuts, settings, the installer.
 
 **Not yet tried on the real thing:**
-- Opening a printer's web page over a USB cable with a real HP printer. The code that does it is tested against a simulated device, but it hasn't been proven on a real printer yet.
+- Opening a printer's web page over a USB cable with a real HP printer. The code that does it was checked against a simulated device, but it hasn't been proven on a real printer yet.
 - Scanning through the Windows scanner driver (the fallback for older scanners).
 - Putting ink on paper with a physical printer.
 - Taking a photo with the camera button, and drawing a signature (the signature box opens, but it was only tested without drawing).
@@ -84,13 +84,10 @@ You need Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download). Yo
 
 ```powershell
 dotnet build src/PrintHub.App -p:Platform=x64      # build the app
-dotnet test tests/PrintHub.Tests                   # run the unit tests
-.\build.ps1                                        # tests + the single-file exe + zip, into dist\
+.\build.ps1                                        # the single-file exe + zip, into dist\
 ```
 
 The app also takes a few command-line options: `--page home|print|scan|copy|shortcuts|printer|web|settings` opens a particular screen, `--import <image>` opens an image in the scan editor, and `--print <file>` queues a file on the Print screen.
-
-To run the UI tests, which click through the real app against a fake network printer, build the app and `tests/FakePrinter` first, then run `powershell -File tests\ui\run-all.ps1`. They open and close app windows, so leave the PC alone while they run.
 
 ### How it's organised
 
@@ -98,9 +95,6 @@ To run the UI tests, which click through the real app against a fake network pri
 src/PrintHub.Core     finding printers, IPP, eSCL, Windows scanner (WIA), USB, imaging, PDF, text recognition, printing
 src/PrintHub.App      the WinUI 3 app
 src/PrintHub.Probe    a small command-line tool for poking at a printer
-tests/PrintHub.Tests  unit and integration tests
-tests/FakePrinter     a pretend network printer (IPP, eSCL, web page, Bonjour) used by the tests
-tests/ui              scripts that drive the real app through Windows UI Automation
 installer/            the optional per-user install and uninstall scripts
 ```
 
