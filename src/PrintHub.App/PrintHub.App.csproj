@@ -30,6 +30,15 @@
       <ResolvedFileToPublish Include="$(OutDir)HSA.pri" RelativePath="resources.pri" CopyToPublishDirectory="PreserveNewest" Condition="Exists('$(OutDir)HSA.pri')" />
     </ItemGroup>
   </Target>
+  <!-- The self-contained Windows App SDK runtime ships on-device AI / machine-learning / widgets components (onnxruntime, DirectML,
+       Microsoft.Windows.AI.*, ...) that HSA never loads: ~46 MB that a single-file build must unpack and virus-scan on every first launch. -->
+  <Target Name="TrimUnusedWindowsAppSdkParts" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <_UnusedSdkPart Include="@(ResolvedFileToPublish)" Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(Filename)%(Extension)', '^(onnxruntime|DirectML|Microsoft\.Windows\.(AI|Workloads|Widgets)\.|workloads\.json)', RegexOptions.IgnoreCase))" />
+      <ResolvedFileToPublish Remove="@(_UnusedSdkPart)" />
+    </ItemGroup>
+    <Message Importance="high" Text="Left out of the publish: @(_UnusedSdkPart->Count()) unused Windows App SDK files" />
+  </Target>
   <ItemGroup>
     <Content Include="Assets\HSA.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\HSA.png" CopyToOutputDirectory="PreserveNewest" />

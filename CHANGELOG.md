@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.5
+- **Faster start-up.** The printer you used last time is connected the moment the window opens; the network search (about 3 seconds) now finishes in the background instead of holding everything up. Previously the window waited for that search before it connected to any printer.
+- The installer unpacks the app once while installing, so the first launch from the Start menu no longer spends several seconds extracting ~160 MB (`HSA.exe --prewarm`, exits straight away).
+- The exe is 44 MB smaller: on-device AI / machine-learning / widgets parts of the Windows App SDK that HSA never uses are left out.
+
 ## 0.10.4
 - The installer now clears Windows' "downloaded from the internet" mark on the installed copy, so the Start menu shortcut opens the app without the "Windows protected your PC" box.
 - The build script can sign the exe when you have a code-signing certificate (`-PfxPath` / `-CertThumbprint`). New guide: docs/code-signing.md, covering the free, paid and Microsoft Store routes.

@@ -22,6 +22,12 @@ Copy-Item $source $target -Force
 Unblock-File -LiteralPath (Join-Path $target 'HSA.exe')
 Copy-Item (Join-Path $PSScriptRoot 'Uninstall-HSA.ps1') $target -Force
 
+# The first start of a single-file exe unpacks about 160 MB (several seconds). Do that now, once, so the first real launch is quick.
+try {
+  $warm = Start-Process -FilePath (Join-Path $target 'HSA.exe') -ArgumentList '--prewarm' -PassThru -WindowStyle Hidden
+  if (-not $warm.WaitForExit(120000)) { $warm.Kill() }
+} catch { }
+
 # Start menu shortcut (the icon is embedded in HSA.exe)
 $programs = [Environment]::GetFolderPath('Programs')
 $shell = New-Object -ComObject WScript.Shell

@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
         App.State.CurrentChanged += () => DispatcherQueue.TryEnqueue(UpdateHeader);
         App.State.StatusChanged += () => DispatcherQueue.TryEnqueue(UpdateHeader);
 
+        Root.Loaded += (_, _) => StartupTrace.Mark("Window content loaded (first frame)");
         Nav.SelectedItem = Nav.MenuItems[0];
     }
 

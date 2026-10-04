@@ -10,10 +10,23 @@ public static class PrinterDiscovery
     /// <summary>Optional hook so the app layer can add WIA scanners (requires COM, kept out of this file).</summary>
     public static Func<List<(string Id, string Name)>>? WiaProvider { get; set; } = Scanning.WiaScanner.ListScanners;
 
+    /// <summary>Optional: receives timing lines such as "WIA scanners took 2300 ms".</summary>
+    public static Action<string>? Trace { get; set; }
+
+    static T Timed<T>(string what, Func<T> f)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try { return f(); } finally { Trace?.Invoke($"{what} took {sw.ElapsedMilliseconds} ms"); }
+    }
+
     public static async Task<List<PrinterDevice>> DiscoverAsync(CancellationToken ct = default)
     {
-        var mdnsTask = MdnsClient.BrowseAsync(ct: ct);
-        var local = await Task.Run(() => (Spooler: SafeList(SpoolerPrinters.List), Usb: SafeList(() => UsbDeviceScanner.FindHttpInterfaces(true).ToList()), Wia: SafeList(() => WiaProvider?.Invoke() ?? new())), ct);
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        var mdnsTask = Task.Run(async () => { var sw = System.Diagnostics.Stopwatch.StartNew(); try { return await MdnsClient.BrowseAsync(ct: ct); } finally { Trace?.Invoke($"Bonjour search took {sw.ElapsedMilliseconds} ms"); } }, ct);
+        var local = await Task.Run(() => (
+            Spooler: Timed("Windows printer list", () => SafeList(SpoolerPrinters.List)),
+            Usb: Timed("USB scan", () => SafeList(() => UsbDeviceScanner.FindHttpInterfaces(true).ToList())),
+            Wia: Timed("WIA scanner list", () => SafeList(() => WiaProvider?.Invoke() ?? new()))), ct);
 
         List<MdnsService> services;
         try { services = await mdnsTask; } catch { services = new(); }

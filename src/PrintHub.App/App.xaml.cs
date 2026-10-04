@@ -10,6 +10,10 @@ public partial class App : Application
 
     public App()
     {
+        StartupTrace.Mark("App constructor");
+        // "HSA.exe --prewarm": used by the installer. By the time this code runs the single-file exe has already unpacked itself,
+        // so exiting here means the first real launch starts from the unpacked copy instead of unpacking ~160 MB.
+        if (Environment.GetCommandLineArgs().Contains("--prewarm")) Environment.Exit(0);
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
@@ -28,8 +32,12 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        StartupTrace.Mark("OnLaunched");
         Window = new MainWindow();
+        StartupTrace.Mark("MainWindow created");
         Window.Activate();
+        StartupTrace.Mark("Window activated");
+        Core.Discovery.PrinterDiscovery.Trace = s => StartupTrace.Mark("  discovery: " + s);
         _ = State.InitializeAsync();
 
         // PrintHub.exe [--page home|print|scan|copy|shortcuts|printer|web|settings] [--import file ...]

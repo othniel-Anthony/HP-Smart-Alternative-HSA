@@ -31,6 +31,7 @@ public sealed class AppState
     public async Task InitializeAsync()
     {
         Settings = await Task.Run(SettingsStore.Load);
+        StartupTrace.Mark("Settings loaded");
         // show remembered printers immediately, then discover
         Devices = Settings.Printers.Select(p => p.ToDevice()).ToList();
         DevicesChanged?.Invoke();
@@ -41,7 +42,22 @@ public sealed class AppState
         _timer.Tick += async (_, _) => await RefreshStatusAsync();
         _timer.Start();
 
+        // The printer used last time is usually still where it was: connect to it right away instead of waiting for the
+        // network search (about 3 s of Bonjour) to finish. The search below then completes the picture (USB, Windows queue, scanners).
+        var remembered = Devices.FirstOrDefault(d => d.Id == Settings.SelectedPrinterId && d.HasNetwork);
+        if (remembered is not null) _earlySelect = SelectAsync(remembered);
+
         await DiscoverAsync();
+        StartupTrace.Mark("Start-up finished (printer chosen, status requested)");
+    }
+
+    Task? _earlySelect;
+
+    /// <summary>True when a session opened for <paramref name="a"/> would be identical to one opened for <paramref name="b"/>.</summary>
+    bool SameConnection(PrinterDevice a, PrinterDevice b)
+    {
+        bool UsbFirst(PrinterDevice d) => d.HasUsbHttp && (Settings.PreferUsb || !d.HasNetwork);
+        return a.IppUri == b.IppUri && a.EsclUri == b.EsclUri && a.WebUri == b.WebUri && UsbFirst(a) == UsbFirst(b) && !UsbFirst(a);
     }
 
     public void SaveSettings()
@@ -55,7 +71,9 @@ public sealed class AppState
         Discovering = true; DevicesChanged?.Invoke();
         try
         {
+            StartupTrace.Mark("Printer search started");
             var found = await PrinterDiscovery.DiscoverAsync();
+            StartupTrace.Mark("Printer search finished");
             // keep remembered printers that discovery didn't see (e.g. powered off, other subnet)
             foreach (var saved in Settings.Printers)
                 if (!found.Any(f => f.Id == saved.Id || (f.Address != null && f.Address == saved.Address) || PrinterDevice.Similar(f.Name, saved.Name)))
@@ -68,13 +86,29 @@ public sealed class AppState
         finally { Discovering = false; }
         DevicesChanged?.Invoke();
 
+        if (_earlySelect is { } early) { _earlySelect = null; try { await early; } catch { } }
+
         // re-select the previously used printer (or the only one)
         var keep = Current is null ? null : Devices.FirstOrDefault(d => d.Id == Current.Id || PrinterDevice.Similar(d.Name, Current.Name));
         var wanted = keep
             ?? Devices.FirstOrDefault(d => d.Id == Settings.SelectedPrinterId)
             ?? Devices.FirstOrDefault(d => d.SpoolerName != null && SpoolerPrinters.GetDefault() == d.SpoolerName)
             ?? (Devices.Count == 1 ? Devices[0] : null);
-        if (wanted is not null && (Current is null || !ReferenceEquals(Current, wanted))) await SelectAsync(wanted);
+        if (wanted is null || (Current is not null && ReferenceEquals(Current, wanted))) return;
+
+        if (Current is not null && Session is not null && !Connecting && keep is not null && ReferenceEquals(keep, wanted) && SameConnection(Current, wanted))
+        {
+            // already connected to this printer the same way (the early connection): just pick up what the search added
+            // Stay quiet unless something visible changed: pages rebuild on CurrentChanged, which would throw away
+            // options the user has already picked while the search was running.
+            var before = Current;
+            Current = wanted;
+            if (Settings.SelectedPrinterId != wanted.Id) { Settings.SelectedPrinterId = wanted.Id; SaveSettings(); }
+            if (before.Name != wanted.Name || before.Connection != wanted.Connection || before.CanScan != wanted.CanScan || before.CanPrint != wanted.CanPrint)
+                CurrentChanged?.Invoke();
+            if (wanted.SpoolerName is not null) await RefreshStatusAsync(); // pick up the Windows queue state
+        }
+        else await SelectAsync(wanted);
     }
 
     public async Task SelectAsync(PrinterDevice? device)
