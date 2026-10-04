@@ -17,6 +17,9 @@ Get-Process HSA -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$t
 if (Test-Path $target) { Remove-Item $target -Recurse -Force }
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 Copy-Item $source $target -Force
+# Windows tags files that came from the internet and asks "are you sure?" before running them. You chose to install this one,
+# so clear the tag on the installed copy; the Start menu shortcut then opens it without the prompt.
+Unblock-File -LiteralPath (Join-Path $target 'HSA.exe')
 Copy-Item (Join-Path $PSScriptRoot 'Uninstall-HSA.ps1') $target -Force
 
 # Start menu shortcut (the icon is embedded in HSA.exe)

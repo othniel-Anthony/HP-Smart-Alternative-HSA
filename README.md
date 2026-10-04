@@ -17,9 +17,9 @@ Grab `HSA-<version>-win-x64.exe` from the [latest release](https://github.com/ot
 
 - **Windows 10 (1809 or newer) or Windows 11.** You don't need .NET or anything else installed; it's all inside the file.
 - **The first start takes a few seconds** while the app unpacks itself. After that it opens quickly.
-- **Windows may show a blue "Windows protected your PC" box.** The exe isn't code-signed (that costs money), so SmartScreen doesn't recognise it. Click *More info*, then *Run anyway*. Each release lists a SHA-256 checksum if you want to verify the download.
+- **Windows will probably stop you the first time.** You will see a *Windows protected your PC* box (or an "are you sure you want to run this?" prompt) saying the publisher is unknown. The exe isn't code-signed yet, because that takes a paid certificate or approval for a free open-source one. Click *More info*, then *Run anyway*. To stop it asking, right-click the exe, choose *Properties* and tick **Unblock**, or install with the script described below. Each release lists a SHA-256 checksum so you can check the download. [More about this](docs/code-signing.md).
 - **Windows Firewall may ask about network access** the first time. Allow it on private networks; that's how the app finds printers on your Wi-Fi.
-- If you'd rather have a Start menu shortcut and an entry in *Apps & features*, the `.zip` in the release has a small per-user installer script (`Install-HSA.ps1`). It doesn't need admin rights.
+- If you'd rather have a Start menu shortcut and an entry in *Apps & features*, the `.zip` in the release has a small per-user installer script (`Install-HSA.ps1`). It doesn't need admin rights, and it clears Windows' "downloaded from the internet" mark on the installed copy so the app opens without that box.
 
 ## What you can do
 

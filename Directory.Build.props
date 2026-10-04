@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
-    <Version>0.10.3</Version>
+    <Version>0.10.4</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>HP Smart Alternative (HSA)</Product>
     <Authors>HSA</Authors>
     <Description>An alternative to HP Smart for Windows: discover, print, scan, copy and manage printers over network and USB.</Description>

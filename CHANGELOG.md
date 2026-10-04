@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.4
+- The installer now clears Windows' "downloaded from the internet" mark on the installed copy, so the Start menu shortcut opens the app without the "Windows protected your PC" box.
+- The build script can sign the exe when you have a code-signing certificate (`-PfxPath` / `-CertThumbprint`). New guide: docs/code-signing.md, covering the free, paid and Microsoft Store routes.
+- README explains the first-run box and how to unblock the exe.
+
 ## 0.10.3
 - The printer card on Home is now plain too (no tint, no accent bar). The remaining colour is the icons, headings and navigation highlight.
 

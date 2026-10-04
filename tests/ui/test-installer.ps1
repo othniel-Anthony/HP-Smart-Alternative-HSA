@@ -16,12 +16,16 @@ $work = Join-Path $env:TEMP 'hsa-installer-test'
 if (Test-Path $work) { Remove-Item $work -Recurse -Force }
 Expand-Archive $Zip $work
 Check ((Test-Path "$work\HSA.exe") -and (Test-Path "$work\Install-HSA.ps1") -and (Test-Path "$work\Uninstall-HSA.ps1")) 'zip contains HSA.exe and both scripts'
+# make the extracted exe look like a browser download (Mark of the Web), which is what triggers Windows' "are you sure?" prompt
+Set-Content -LiteralPath "$work\HSA.exe" -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+Check ($null -ne (Get-Content -LiteralPath "$work\HSA.exe" -Stream Zone.Identifier -ErrorAction SilentlyContinue)) 'test setup: the source exe is marked as downloaded from the internet'
 
 # ---------------------------------------------------------------- install
 & powershell -NoProfile -ExecutionPolicy Bypass -File "$work\Install-HSA.ps1" | Out-Null
 Check (Test-Path "$target\HSA.exe") 'HSA.exe is copied to Programs\HP Smart Alternative'
 Check (Test-Path "$target\Uninstall-HSA.ps1") 'uninstaller is installed next to it'
 Check (Test-Path $lnk) 'Start-menu shortcut exists'
+Check ($null -eq (Get-Content -LiteralPath "$target\HSA.exe" -Stream Zone.Identifier -ErrorAction SilentlyContinue)) 'installed exe is no longer marked as downloaded, so it starts without the "are you sure?" prompt'
 $ws = New-Object -ComObject WScript.Shell
 $sc = $ws.CreateShortcut($lnk)
 Check ($sc.TargetPath -eq "$target\HSA.exe") 'shortcut points at the installed exe'
