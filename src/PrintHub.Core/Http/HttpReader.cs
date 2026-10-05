@@ -6,6 +6,9 @@ namespace PrintHub.Core.Http;
 /// <summary>Reads whole HTTP/1.1 messages from a stream (TCP socket or USB pipe), keeping leftover bytes between messages.</summary>
 public sealed class HttpReader
 {
+    const int UnframedQuietMs = 2_000;
+    const int UsbPipeLongWaitMs = Usb.UsbPipeStream.ResponseTimeoutMs;
+
     readonly Stream _s;
     readonly byte[] _buf = new byte[32768];
     int _pos, _len;
@@ -39,10 +42,12 @@ public sealed class HttpReader
         }
         else if (isResponse)
         {
-            // No framing: body runs until the device goes quiet / closes.
+            // No framing: body runs until the device goes quiet / closes. The head has arrived, so only wait a moment for the rest.
             var ms = new MemoryStream();
+            (_s as IReadTimeoutStream)?.SetReadTimeout(UnframedQuietMs);
             try { while (true) { if (_pos == _len && !await FillAsync(ct)) break; ms.Write(_buf, _pos, _len - _pos); _pos = _len; } }
             catch (TimeoutException) { }
+            finally { (_s as IReadTimeoutStream)?.SetReadTimeout(UsbPipeLongWaitMs); }
             msg.Body = ms.ToArray();
         }
         return msg;

@@ -12,6 +12,7 @@ namespace PrintHub.Core.Usb;
 public sealed class UsbHttpProxy : IAsyncDisposable
 {
     readonly Func<Stream> _open;
+    readonly Action? _abort;
     readonly SemaphoreSlim _usbGate = new(1, 1); // the USB interface carries one HTTP exchange at a time
     readonly CancellationTokenSource _cts = new();
     TcpListener? _listener;
@@ -23,6 +24,7 @@ public sealed class UsbHttpProxy : IAsyncDisposable
         if (!iface.Openable) throw new InvalidOperationException($"Interface is not openable: {iface.Describe()}");
         var path = iface.DevicePath!;
         _open = () => { var s = UsbPipeStream.Open(path); s.Drain(); return s; };
+        _abort = () => (_usb as UsbPipeStream)?.Abort();
     }
 
     /// <summary>Test hook: bridge to any byte stream that speaks HTTP (a fake device, a socket...).</summary>
@@ -30,6 +32,7 @@ public sealed class UsbHttpProxy : IAsyncDisposable
 
     public Uri BaseUri { get; private set; } = null!;
     public event Action<string>? Log;
+    void Note(string text) { Log?.Invoke(text); Diag.Log("USB: " + text); }
 
     public void Start(int port = 0)
     {
@@ -92,26 +95,35 @@ public sealed class UsbHttpProxy : IAsyncDisposable
         await _usbGate.WaitAsync(_cts.Token);
         try
         {
+            // A request that never reached the printer, or one that is safe to repeat (GET), is retried once on a fresh USB
+            // connection. A print job or scan request that was already sent is NOT replayed: the printer may be working on it,
+            // and sending it again would print or scan twice.
+            bool safeToRepeat = req.Method is "GET" or "HEAD" or "OPTIONS";
             for (int attempt = 0; ; attempt++)
             {
+                bool sent = false;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     EnsureOpen();
-                    Log?.Invoke($"USB <- {req.StartLine} ({req.Body.Length} B)");
+                    Note($"<- {req.StartLine} ({req.Body.Length} B)");
                     await _usb!.WriteAsync(wire, _cts.Token);
+                    sent = true;
                     var resp = await _usbReader!.ReadAsync(isResponse: true, requestWasHead: req.Method == "HEAD", ct: _cts.Token)
                                ?? throw new IOException("Printer closed the USB connection");
-                    Log?.Invoke($"USB -> {resp.StartLine} ({resp.Body.Length} B)");
+                    Note($"-> {resp.StartLine} ({resp.Body.Length} B) after {sw.ElapsedMilliseconds} ms");
                     Rewrite(resp);
                     return resp;
                 }
-                catch (Exception ex) when (attempt == 0 && ex is not OperationCanceledException)
+                catch (Exception ex) when (attempt == 0 && ex is not OperationCanceledException && !_cts.IsCancellationRequested && (!sent || safeToRepeat))
                 {
-                    Log?.Invoke($"USB error ({ex.Message}); reopening interface");
+                    Note($"error ({ex.Message}) after {sw.ElapsedMilliseconds} ms; reopening interface");
                     CloseUsb();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    Note($"error ({ex.Message}) after {sw.ElapsedMilliseconds} ms; giving up on {req.StartLine}");
+                    CloseUsb();
                     return BadGateway($"USB transport error: {ex.Message}");
                 }
             }
@@ -147,8 +159,12 @@ public sealed class UsbHttpProxy : IAsyncDisposable
     {
         _cts.Cancel();
         _listener?.Stop();
-        await _usbGate.WaitAsync();
-        CloseUsb();
-        _usbGate.Release();
+        _abort?.Invoke(); // a request still waiting for the printer must not hold the connection open
+        if (await _usbGate.WaitAsync(TimeSpan.FromSeconds(3)))
+        {
+            CloseUsb();
+            _usbGate.Release();
+        }
+        else CloseUsb();
     }
 }

@@ -55,8 +55,8 @@ public sealed partial class HomePage : Page
             foreach (var sup in supplies) SuppliesPanel.Children.Add(Ui.SupplyRow(sup));
             SuppliesCard.Visibility = Visibility.Visible;
             SuppliesNote.Text = supplies.Count > 0 ? ""
-                : s.Status is not null ? "This printer doesn't report ink or toner levels over the network."
-                : d.SpoolerName is not null && s.Session?.Ipp is null ? "Supply levels need a network or USB (IPP) connection. This printer is only connected through a Windows driver."
+                : s.Status is not null ? "This printer doesn't report ink or toner levels over this connection."
+                : d.SpoolerName is not null && s.Session?.Ipp is null && !s.Connecting ? "HSA can't read ink levels over this USB cable: the printer doesn't offer a standard USB web service (IPP-USB or HP web services). If it also has Wi-Fi or Ethernet, the levels appear once it is found on the network."
                 : s.Connecting ? "Connecting…" : "Supply levels will appear when the printer responds.";
         }
 

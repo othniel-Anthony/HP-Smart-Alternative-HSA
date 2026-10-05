@@ -51,8 +51,17 @@ public sealed class PrinterDevice
         "network", "ipp", "driver", "class", "pcl", "ps", "xl", "wsd", "scanner", "mfp", "bluetooth", "esc", "p", "r", "v4", "universal", "printing",
     };
 
+    // Short forms that drivers and USB descriptors use for the same product line ("HP DJ 1110 series" is the "DeskJet 1110 series").
+    static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["dj"] = "deskjet", ["oj"] = "officejet", ["ojp"] = "officejet", ["lj"] = "laserjet", ["pw"] = "pagewide",
+    };
+
+    static readonly Regex BrandRx = new(@"\b(hp|hewlett|epson|canon|brother|lexmark|samsung|xerox|ricoh|kyocera|oki|konica|dell|sharp|pantum)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static HashSet<string> Tokens(string s) =>
-        Regex.Split(s.ToLowerInvariant(), "[^a-z0-9]+").Where(t => t.Length > 0 && !Stop.Contains(t)).ToHashSet();
+        Regex.Split(s.ToLowerInvariant(), "[^a-z0-9]+").Where(t => t.Length > 0 && !Stop.Contains(t))
+            .Select(t => Aliases.TryGetValue(t, out var full) ? full : t).ToHashSet();
 
     public static bool Similar(string a, string b)
     {
@@ -60,7 +69,14 @@ public sealed class PrinterDevice
         if (ta.Count == 0 || tb.Count == 0) return false;
         var common = ta.Intersect(tb).ToList();
         if (common.Count == 0 || !common.Any(t => t.Any(char.IsDigit))) return false;
-        return common.Count >= Math.Min(ta.Count, tb.Count) * 0.6;
+        if (common.Count >= Math.Min(ta.Count, tb.Count) * 0.6) return true;
+
+        // Same model number (at least three digits, e.g. 1110 or 16650) and not two different brands: one physical printer
+        // that the queue, the USB descriptor and the scanner driver simply spell differently.
+        string? brandA = BrandRx.Match(a).Value.ToLowerInvariant(), brandB = BrandRx.Match(b).Value.ToLowerInvariant();
+        if (brandA == "hewlett") brandA = "hp"; if (brandB == "hewlett") brandB = "hp";
+        bool brandsDiffer = brandA.Length > 0 && brandB.Length > 0 && brandA != brandB;
+        return !brandsDiffer && common.Any(t => t.Count(char.IsDigit) >= 3);
     }
 
     /// <summary>Fold another discovery record of the same physical device into this one.</summary>

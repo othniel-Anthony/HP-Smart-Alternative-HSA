@@ -14,6 +14,7 @@ public partial class App : Application
         // "HSA.exe --prewarm": used by the installer. By the time this code runs the single-file exe has already unpacked itself,
         // so exiting here means the first real launch starts from the unpacked copy instead of unpacking ~160 MB.
         if (Environment.GetCommandLineArgs().Contains("--prewarm")) Environment.Exit(0);
+        Core.Diag.Sink = AppLog.Write;
         InitializeComponent();
         UnhandledException += (_, e) =>
         {

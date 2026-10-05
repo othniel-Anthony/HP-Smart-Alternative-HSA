@@ -12,6 +12,7 @@ public static class WindowsPrintService
 
     static void Print(string printerName, PrintSource src, PrintOptions o, string docName, CancellationToken ct)
     {
+        var total = System.Diagnostics.Stopwatch.StartNew();
         var pages = PrintOptions.ParseRange(o.PageRange, src.PageCount);
         int cursor = 0;
         Bitmap? current = null;
@@ -31,21 +32,29 @@ public static class WindowsPrintService
         if (!string.IsNullOrEmpty(o.PrintToFilePath)) { ps.PrintToFile = true; ps.PrintFileName = o.PrintToFilePath; }
         ps.Copies = (short)Math.Clamp(o.Copies, 1, 999);
         ps.Collate = o.Collate;
-        if (ps.CanDuplex) ps.Duplex = o.Duplex switch { DuplexMode.LongEdge => Duplex.Vertical, DuplexMode.ShortEdge => Duplex.Horizontal, _ => Duplex.Simplex };
-        doc.DefaultPageSettings.Color = o.Color && ps.SupportsColor;
+
+        // Everything below is a preference. A driver that rejects one of them must not stop the page from printing.
+        void Try(string what, Action a) { try { a(); } catch (Exception ex) { Diag.Log($"Windows print: could not apply {what}: {ex.Message}"); } }
+        Try("duplex", () => { if (o.Duplex != DuplexMode.Off || ps.CanDuplex) ps.Duplex = o.Duplex switch { DuplexMode.LongEdge => Duplex.Vertical, DuplexMode.ShortEdge => Duplex.Horizontal, _ => Duplex.Simplex }; });
+        Try("colour", () => doc.DefaultPageSettings.Color = o.Color && ps.SupportsColor);
         doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
 
         if (o.Paper != PaperChoice.Default)
-        {
-            var match = ps.PaperSizes.Cast<PaperSize>().FirstOrDefault(p =>
-                    o.Paper.WindowsNames.Any(n => p.PaperName.Equals(n, StringComparison.OrdinalIgnoreCase) || p.PaperName.Contains(n, StringComparison.OrdinalIgnoreCase)))
-                ?? ps.PaperSizes.Cast<PaperSize>().FirstOrDefault(p => Math.Abs(p.Width - o.Paper.WidthIn * 100) < 8 && Math.Abs(p.Height - o.Paper.HeightIn * 100) < 8);
-            if (match is not null) doc.DefaultPageSettings.PaperSize = match;
-        }
+            Try("paper size", () =>
+            {
+                var match = ps.PaperSizes.Cast<PaperSize>().FirstOrDefault(p =>
+                        o.Paper.WindowsNames.Any(n => p.PaperName.Equals(n, StringComparison.OrdinalIgnoreCase) || p.PaperName.Contains(n, StringComparison.OrdinalIgnoreCase)))
+                    ?? ps.PaperSizes.Cast<PaperSize>().FirstOrDefault(p => Math.Abs(p.Width - o.Paper.WidthIn * 100) < 8 && Math.Abs(p.Height - o.Paper.HeightIn * 100) < 8);
+                if (match is not null) doc.DefaultPageSettings.PaperSize = match;
+            });
 
-        var wantRes = o.Quality switch { PrintQuality.Draft => PrinterResolutionKind.Draft, PrintQuality.Best => PrinterResolutionKind.High, _ => PrinterResolutionKind.Medium };
-        var res = ps.PrinterResolutions.Cast<PrinterResolution>().FirstOrDefault(r => r.Kind == wantRes);
-        if (res is not null) doc.DefaultPageSettings.PrinterResolution = res;
+        Try("print quality", () =>
+        {
+            var wantRes = o.Quality switch { PrintQuality.Draft => PrinterResolutionKind.Draft, PrintQuality.Best => PrinterResolutionKind.High, _ => PrinterResolutionKind.Medium };
+            var res = ps.PrinterResolutions.Cast<PrinterResolution>().FirstOrDefault(r => r.Kind == wantRes);
+            if (res is not null) doc.DefaultPageSettings.PrinterResolution = res;
+        });
+        Diag.Log($"Windows print '{printerName}': settings ready after {total.ElapsedMilliseconds} ms ({pages.Count} page(s), {o.Copies} copies)");
 
         doc.QueryPageSettings += (_, e) =>
         {
@@ -73,7 +82,7 @@ public static class WindowsPrintService
             e.HasMorePages = cursor < pages.Count;
         };
 
-        try { doc.Print(); }
+        try { doc.Print(); Diag.Log($"Windows print '{printerName}': handed to the spooler after {total.ElapsedMilliseconds} ms"); }
         catch (InvalidPrinterException ex) { throw new InvalidOperationException($"The printer '{printerName}' is not available: {ex.Message}", ex); }
         finally { current?.Dispose(); }
     }

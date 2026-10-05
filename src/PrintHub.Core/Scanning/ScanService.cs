@@ -35,9 +35,25 @@ public static class ScanService
                     Source = s.Source, Color = s.Color, Dpi = Nearest(src.Resolutions, s.Dpi),
                     WidthUnits = s.Paper.IsAuto ? 0 : (int)(s.Paper.WidthIn * 300), HeightUnits = s.Paper.IsAuto ? 0 : (int)(s.Paper.HeightIn * 300),
                 };
-                await foreach (var bytes in escl.ScanAsync(req, src, ct))
-                    yield return await PostProcess(bytes, s, req.Dpi);
-                yield break;
+                // If the eSCL scan fails before any page arrives and the printer also has a Windows scanner driver, use that instead.
+                int delivered = 0;
+                Exception? esclError = null;
+                await using (var stream = escl.ScanAsync(req, src, ct).GetAsyncEnumerator(ct))
+                {
+                    while (true)
+                    {
+                        bool has;
+                        try { has = await stream.MoveNextAsync(); }
+                        catch (Exception ex) when (delivered == 0 && device.WiaDeviceId is not null && !ct.IsCancellationRequested
+                                                   && ex is EsclException or HttpRequestException or IOException or TimeoutException)
+                        { esclError = ex; break; }
+                        if (!has) break;
+                        delivered++;
+                        yield return await PostProcess(stream.Current, s, req.Dpi);
+                    }
+                }
+                if (esclError is null) yield break;
+                Diag.Log($"eSCL scan failed ({esclError.Message}); using the Windows scanner driver instead");
             }
             if (device.WiaDeviceId is null) throw new EsclException("The scanner did not respond: " + esclFailure);
         }

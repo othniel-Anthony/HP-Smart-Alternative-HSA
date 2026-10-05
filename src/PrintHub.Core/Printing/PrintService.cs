@@ -32,8 +32,31 @@ public static class PrintService
     public static async Task PrintAsync(PrinterDevice dev, PrinterSession? session, PrintSource src, PrintOptions o, CancellationToken ct = default)
     {
         var route = Resolve(dev, session, o.Route);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // Over a USB cable the Windows driver has to turn the PDF into a huge raster image and push it through the cable, which can
+        // take a minute. A printer that has an IPP-over-USB session and takes PDF directly gets the file itself instead (what HP Smart
+        // does). If it refuses, nothing was printed and the driver route below still runs.
+        if (o.Route == PrintRoute.Auto && route == PrintRoute.WindowsDriver && session is { ViaUsb: true, Ipp: { } usbIpp }
+            && src.OriginalMime == "application/pdf" && string.IsNullOrEmpty(o.PrintToFilePath))
+        {
+            bool takesPdf = false;
+            try { takesPdf = (await usbIpp.GetStatusAsync(ct)).SupportsPdf; } catch (Exception ex) when (ex is not OperationCanceledException) { Diag.Log("Print: could not ask the printer about PDF support over USB: " + ex.Message); }
+            if (takesPdf)
+            {
+                try
+                {
+                    await PrintViaIppAsync(usbIpp, src, o, ct);
+                    Diag.Log($"Print: PDF sent straight to the printer over USB in {sw.ElapsedMilliseconds} ms");
+                    return;
+                }
+                catch (IppException ex) { Diag.Log($"Print: the printer refused the PDF over USB ({ex.Message}); using the Windows driver"); }
+            }
+        }
+
         if (route == PrintRoute.WindowsDriver) await WindowsPrintService.PrintAsync(dev.SpoolerName!, src, o, src.Name, ct);
         else await PrintViaIppAsync(session!.Ipp!, src, o, ct);
+        Diag.Log($"Print: {route} route finished in {sw.ElapsedMilliseconds} ms");
     }
 
     static async Task PrintViaIppAsync(IppClient ipp, PrintSource src, PrintOptions o, CancellationToken ct)

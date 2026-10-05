@@ -67,6 +67,7 @@ A few things to know:
 - Settings → *USB printer connections* shows what Windows reports for each interface and whether HSA can open it.
 - HSA doesn't install or replace any drivers. Printing and WIA scanning keep using the normal ones.
 - Only one program can use that interface at a time, so close HP Smart first if it's running.
+- Not every printer has one. Entry-level HP inkjets (the DeskJet 1000 / 2000 class) answer over USB with ink levels but have no web page. Many Epson printers have no USB web interface at all, so over a plain USB cable HSA can print and scan through the Windows drivers but can't show a web page or ink levels; connect the printer to your network (Wi-Fi or Ethernet) for those.
 
 ## Troubleshooting
 

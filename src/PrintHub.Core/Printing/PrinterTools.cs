@@ -63,6 +63,15 @@ public static class PrinterTools
         sb.AppendLine($"Windows queue: {dev.SpoolerName}  port={dev.SpoolerPort}  driver={dev.SpoolerDriver}");
         sb.AppendLine($"WIA id:        {dev.WiaDeviceId}");
         foreach (var u in dev.UsbCandidates) sb.AppendLine($"USB:           {u.Describe()}");
+        try
+        {
+            // every interface Windows reports for this printer, with the driver each one is bound to: shows why a USB web page or ink levels are unavailable
+            foreach (var u in UsbDeviceScanner.Scan(presentOnly: true)
+                         .Where(u => dev.UsbCandidates.Any(c => c.VendorId == u.VendorId && c.ProductId == u.ProductId) || PrinterDevice.Similar(u.Name, dev.Name))
+                         .Where(u => !dev.UsbCandidates.Any(c => c.InstanceId == u.InstanceId)))
+                sb.AppendLine($"USB (other):   {u.Describe()}");
+        }
+        catch (Exception ex) { sb.AppendLine($"USB scan failed: {ex.Message}"); }
 
         if (session?.Ipp is { } ipp)
         {
@@ -91,6 +100,18 @@ public static class PrinterTools
             catch (Exception ex) { sb.AppendLine().AppendLine($"eSCL query failed: {ex.Message}"); }
         }
         sb.AppendLine().AppendLine($"OCR available: {OcrService.IsAvailable}");
+
+        // the last few USB / scanner-driver / print-timing log lines from today, so a support request carries the evidence
+        try
+        {
+            var log = Path.Combine(Settings.AppPaths.DataDir, "logs", $"printhub-{DateTime.Now:yyyyMMdd}.log");
+            if (File.Exists(log))
+            {
+                var recent = File.ReadLines(log).Where(l => l.Contains("USB") || l.Contains("WIA") || l.Contains("Windows print") || l.Contains("eSCL") || l.Contains("HP web services")).TakeLast(40).ToList();
+                if (recent.Count > 0) { sb.AppendLine().AppendLine("Recent log lines"); foreach (var l in recent) sb.AppendLine("  " + l); }
+            }
+        }
+        catch { }
         return sb.ToString();
     }
 }

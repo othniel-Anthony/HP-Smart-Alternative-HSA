@@ -146,6 +146,14 @@ public sealed class AppState
         }
         else if (session is { Error: not null }) error = session.Error;
 
+        // IPP gave no ink levels (or there is no IPP at all, as on many USB-only HP inkjets): try HP's web services.
+        if (session is not null && (status is null || status.Supplies.Count == 0) && await session.GetLedmSuppliesAsync() is { } ledm)
+        {
+            status ??= new PrinterStatus { MakeAndModel = dev.Name, State = PrinterState.Idle };
+            status.Supplies.AddRange(ledm);
+            error = null;
+        }
+
         if (dev.SpoolerName is not null)
             queue = await Task.Run(() => SpoolerPrinters.List().FirstOrDefault(q => q.Name == dev.SpoolerName));
 

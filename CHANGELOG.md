@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.6
+- **One printer, not three.** A USB printer used to show up as separate entries when Windows, the USB cable and the scanner driver spelled its name differently ("HP DJ 1110 series" for the print queue, "DeskJet 1110 series" over USB). Those entries are now recognised as one printer, so the web page, ink levels and scanner reach the printer you actually select, and Copy (which needs both a scanner and a printer) works.
+- **HP ink levels over USB and the network** for printers that have no IPP, such as many USB-only HP inkjets (read from HP's web services).
+- **Feeder scanning with a Windows scanner driver:** fixed "The parameter is incorrect". HSA now picks the driver's feeder source, sets the options in the order Windows expects, keeps to the values the driver allows, and retries with fewer options if the driver still refuses. If the printer also has a network scan service, a failed network scan falls back to the scanner driver.
+- **USB transfers:** a print or scan request that was already sent is never sent a second time after a hiccup (this could print twice). The app waits longer for slow replies and closing the connection no longer hangs. Printers whose USB interface doesn't speak HTTP are given up on in seconds instead of minutes.
+- **PDF printing over USB** goes straight to the printer when it has an IPP-over-USB connection and accepts PDF, instead of being turned into a huge image by the driver first. The driver is still used if the printer refuses.
+- Driver printing no longer fails because one optional setting (paper size, quality, two-sided) is rejected by the driver.
+- Clearer messages when a printer has no USB web page or ink levels, and the support report now lists every USB interface and which driver owns it, plus recent USB / scanner / print timing lines.
+
 ## 0.10.5
 - **Faster start-up.** The printer you used last time is connected the moment the window opens; the network search (about 3 seconds) now finishes in the background instead of holding everything up. Previously the window waited for that search before it connected to any printer.
 - The installer unpacks the app once while installing, so the first launch from the Start menu no longer spends several seconds extracting ~160 MB (`HSA.exe --prewarm`, exits straight away).

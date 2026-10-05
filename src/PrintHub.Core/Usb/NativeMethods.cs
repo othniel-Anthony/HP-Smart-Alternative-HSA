@@ -45,6 +45,8 @@ internal static class NativeMethods
     [DllImport("winusb.dll", SetLastError = true)]
     public static extern bool WinUsb_FlushPipe(IntPtr iface, byte pipeId);
     [DllImport("winusb.dll", SetLastError = true)]
+    public static extern bool WinUsb_AbortPipe(IntPtr iface, byte pipeId);
+    [DllImport("winusb.dll", SetLastError = true)]
     public static extern bool WinUsb_ReadPipe(IntPtr iface, byte pipeId, byte[] buf, uint len, out uint read, IntPtr ov);
     [DllImport("winusb.dll", SetLastError = true)]
     public static extern bool WinUsb_WritePipe(IntPtr iface, byte pipeId, byte[] buf, uint len, out uint written, IntPtr ov);

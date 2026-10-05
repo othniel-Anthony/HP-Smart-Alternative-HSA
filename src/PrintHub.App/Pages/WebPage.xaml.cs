@@ -34,10 +34,19 @@ public sealed partial class WebPage : Page
 
         if (s.Current is null) { Show("Choose a printer to open its web page."); return; }
         if (s.Connecting) { Show("Connecting to the printer…"); return; }
+        if (s.Session is { ViaUsb: true, HasWebPage: false })
+        {
+            Show($"{s.Current.Name} answers over USB but has no web page of its own (many entry-level inkjets don't). Ink levels, if the printer reports them, are on the Home screen.");
+            return;
+        }
         if (_target is null)
         {
-            Show(s.Current.HasUsbHttp ? "The printer's USB web interface did not answer. Try unplugging and re-plugging the USB cable, then press Refresh."
-                                      : "This printer has no web page address. If it is on your network, add it by IP address using the button at the top.");
+            var d = s.Current;
+            var blocked = d.UsbCandidates.FirstOrDefault(u => u.Present && !u.Openable);
+            Show(d.HasUsbHttp ? "The printer's USB web interface did not answer. Try unplugging and re-plugging the USB cable, then press Refresh."
+                : blocked is not null ? $"This printer has a USB web interface, but Windows has given it to another driver ({(blocked.Service.Length > 0 ? blocked.Service : "unknown")}), so HSA can't open it. Printing and scanning still work through the Windows driver. The web page is available if the printer is also connected to your network."
+                : d.SpoolerPort?.StartsWith("USB", StringComparison.OrdinalIgnoreCase) == true ? "This printer model doesn't offer a web page over a USB cable. If it also has Wi-Fi or Ethernet, add it by IP address using the button at the top."
+                : "This printer has no web page address. If it is on your network, add it by IP address using the button at the top.");
             return;
         }
 
