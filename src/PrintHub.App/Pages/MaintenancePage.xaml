@@ -3,92 +3,84 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       Loaded="Page_Loaded" Unloaded="Page_Unloaded">
   <ScrollViewer>
-    <StackPanel Padding="32,24" Spacing="20" MaxWidth="900" HorizontalAlignment="Left">
+    <StackPanel Padding="32,24" Spacing="16" MaxWidth="820" HorizontalAlignment="Left">
       <TextBlock x:Name="Heading" Style="{StaticResource TitleTextBlockStyle}" Text="Epson maintenance" />
       <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" />
 
       <Border Style="{StaticResource CardStyle}">
-        <StackPanel Spacing="10">
-          <TextBlock Text="1. Nozzle check" Style="{StaticResource SectionTitle}" />
-          <TextBlock TextWrapping="Wrap" Opacity="0.8"
-                     Text="Prints a small pattern of lines and blocks. If every line is complete, the print head is fine and you don't need to clean it. Gaps or missing colours mean it does." />
-          <Button x:Name="NozzleButton" Click="Nozzle_Click" AutomationProperties.Name="Print nozzle check">
-            <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8A5;" FontSize="16" /><TextBlock Text="Print nozzle check" /></StackPanel>
-          </Button>
+        <StackPanel Spacing="12">
+          <TextBlock Text="Print head" Style="{StaticResource SectionTitle}" />
+          <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Print a nozzle check first. Clean only if lines are missing." />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button x:Name="NozzleButton" Click="Nozzle_Click" AutomationProperties.Name="Print nozzle check">
+              <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE8A5;" FontSize="16" /><TextBlock Text="Print nozzle check" /></StackPanel>
+            </Button>
+            <DropDownButton x:Name="CleanMenuButton" Content="Clean print head" AutomationProperties.Name="Clean print head">
+              <DropDownButton.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                  <MenuFlyoutItem Text="Level 1: light (one cleaning)" Tag="1" Click="Clean_Click" AutomationProperties.Name="Cleaning level 1" />
+                  <MenuFlyoutItem Text="Level 2: medium (two in a row)" Tag="2" Click="Clean_Click" AutomationProperties.Name="Cleaning level 2" />
+                  <MenuFlyoutItem Text="Level 3: strong (three in a row)" Tag="3" Click="Clean_Click" AutomationProperties.Name="Cleaning level 3" />
+                  <MenuFlyoutSeparator />
+                  <MenuFlyoutItem Text="Black only" Tag="Black" Click="Clean_Click" AutomationProperties.Name="Black only" />
+                  <MenuFlyoutItem Text="Colours only" Tag="Colour" Click="Clean_Click" AutomationProperties.Name="Colours only" />
+                  <MenuFlyoutSeparator />
+                  <MenuFlyoutItem Text="Power ink flush…" Click="PowerFlush_Click" AutomationProperties.Name="Power ink flush" />
+                </MenuFlyout>
+              </DropDownButton.Flyout>
+            </DropDownButton>
+            <CheckBox x:Name="CheckAfter" Content="Print a nozzle check afterwards" IsChecked="True" VerticalAlignment="Center" />
+          </StackPanel>
         </StackPanel>
       </Border>
 
       <Border Style="{StaticResource CardStyle}">
-        <StackPanel Spacing="10">
-          <TextBlock Text="2. Clean the print head" Style="{StaticResource SectionTitle}" />
-          <TextBlock TextWrapping="Wrap" Opacity="0.8"
-                     Text="Pushes ink through the nozzles to clear blockages. It takes a minute or two and uses ink, so run the nozzle check first, and clean again only if it still shows gaps (two or three times at most, then leave the printer for a few hours)." />
-          <TextBlock Text="Cleaning level (all nozzles)" FontWeight="SemiBold" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button x:Name="CleanButton" Click="Clean_Click" Tag="1" AutomationProperties.Name="Cleaning level 1">
-              <TextBlock Text="Level 1: light" />
-            </Button>
-            <Button x:Name="CleanLevel2Button" Click="Clean_Click" Tag="2" AutomationProperties.Name="Cleaning level 2">
-              <TextBlock Text="Level 2: medium" />
-            </Button>
-            <Button x:Name="CleanLevel3Button" Click="Clean_Click" Tag="3" AutomationProperties.Name="Cleaning level 3">
-              <TextBlock Text="Level 3: strong" />
-            </Button>
+        <Grid ColumnSpacing="16">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Printer" Style="{StaticResource SectionTitle}" />
+            <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="For a printer that shows offline or ignores jobs: clears the waiting jobs and sends it a reset." />
           </StackPanel>
-          <TextBlock TextWrapping="Wrap" Opacity="0.6" FontSize="12"
-                     Text="Level 1 runs one full cleaning. Level 2 runs two in a row and level 3 runs three, each after the printer has finished the one before, so they use two and three times the ink. Start with level 1." />
-          <TextBlock Text="Only one colour group" FontWeight="SemiBold" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button x:Name="CleanBlackButton" Click="Clean_Click" Tag="Black" Content="Black only" />
-            <Button x:Name="CleanColourButton" Click="Clean_Click" Tag="Colour" Content="Colours only" />
-          </StackPanel>
-          <TextBlock TextWrapping="Wrap" Opacity="0.6" FontSize="12" Text="“Black only” and “Colours only” are not supported by every model; if nothing happens, use a level above." />
-          <CheckBox x:Name="CheckAfter" Content="Print a nozzle check when the cleaning is finished" IsChecked="True" />
-        </StackPanel>
-      </Border>
-
-      <Border Style="{StaticResource CardStyle}">
-        <StackPanel Spacing="10">
-          <TextBlock Text="3. Reset the printer" Style="{StaticResource SectionTitle}" />
-          <TextBlock TextWrapping="Wrap" Opacity="0.8"
-                     Text="Use this when the printer shows offline, ignores jobs or prints garbled pages. HSA cancels the jobs waiting in Windows, sends the printer a standard reset (the same as the ESC @ command used by Epson tools) and reconnects. It does not change settings, ink or any counters stored in the printer." />
-          <Button x:Name="ResetButton" Click="Reset_Click" AutomationProperties.Name="Reset printer">
+          <Button x:Name="ResetButton" Grid.Column="1" VerticalAlignment="Center" Click="Reset_Click" AutomationProperties.Name="Reset printer">
             <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE777;" FontSize="16" /><TextBlock Text="Reset printer" /></StackPanel>
           </Button>
-        </StackPanel>
+        </Grid>
       </Border>
 
-      <Border Style="{StaticResource CardStyle}">
-        <StackPanel Spacing="10">
-          <TextBlock Text="4. Waste ink counters" Style="{StaticResource SectionTitle}" />
-          <TextBlock TextWrapping="Wrap" Opacity="0.8"
-                     Text="Epson printers count the ink that goes into their waste ink pads and stop with “Service required” when a built-in limit is reached. After the pads have been cleaned or replaced, the counters can be reset here. HSA finds the model, reads the counters, saves a backup of the printer's memory, writes the model's reset values and checks every one of them (undoing the lot if the printer refuses a write)." />
-          <TextBlock x:Name="DbText" TextWrapping="Wrap" Opacity="0.8" />
+      <Expander x:Name="CountersExpander" Header="Waste ink counters" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Waste ink counters">
+        <StackPanel Spacing="12">
+          <TextBlock Opacity="0.7" TextWrapping="Wrap"
+                     Text="Clears the “Service required” counters after the waste ink pads have been cleaned or replaced. A reset only clears the counter: if the pads are full, ink can leak." />
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button x:Name="DbButton" Click="Db_Click" Content="Choose database file…" AutomationProperties.Name="Choose database file" />
             <Button x:Name="CheckButton" Click="Check_Click" Content="Check counters" AutomationProperties.Name="Check counters" />
             <Button x:Name="CountersResetButton" Click="CountersReset_Click" Content="Reset counters…" AutomationProperties.Name="Reset counters" />
             <Button x:Name="UndoButton" Click="Undo_Click" Content="Undo last reset" AutomationProperties.Name="Undo last reset" />
           </StackPanel>
           <StackPanel x:Name="CountersPanel" Spacing="6" />
           <TextBlock x:Name="CountersNote" TextWrapping="Wrap" Opacity="0.8" />
+          <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="DbText" TextWrapping="Wrap" Opacity="0.6" FontSize="12" VerticalAlignment="Center" />
+            <HyperlinkButton x:Name="DbButton" Grid.Column="1" Click="Db_Click" Content="Use a different database file…" AutomationProperties.Name="Choose database file" />
+          </Grid>
         </StackPanel>
-      </Border>
+      </Expander>
 
-      <Border Style="{StaticResource CardStyle}">
-        <StackPanel Spacing="10">
-          <TextBlock Text="Other" Style="{StaticResource SectionTitle}" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button x:Name="DriverButton" Click="Driver_Click" Content="Open the Epson driver settings" />
-            <Button x:Name="QueueButton" Click="Queue_Click" Content="Open print queue" />
-          </StackPanel>
-          <TextBlock TextWrapping="Wrap" Opacity="0.7"
-                     Text="Resetting the counter does not empty the pads. If they are really full, ink can leak out of the printer, so clean or replace them first (Epson support or a repair shop can do it)." />
-        </StackPanel>
-      </Border>
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <HyperlinkButton x:Name="DriverButton" Click="Driver_Click" Content="Epson driver settings" />
+        <HyperlinkButton x:Name="QueueButton" Click="Queue_Click" Content="Print queue" />
+      </StackPanel>
 
-      <TextBlock x:Name="ResultText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-      <ProgressRing x:Name="Ring" IsActive="False" HorizontalAlignment="Left" Width="24" Height="24" />
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <ProgressRing x:Name="Ring" IsActive="False" Width="22" Height="22" />
+        <TextBlock x:Name="ResultText" TextWrapping="Wrap" IsTextSelectionEnabled="True" VerticalAlignment="Center" MaxWidth="700" />
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </Page>

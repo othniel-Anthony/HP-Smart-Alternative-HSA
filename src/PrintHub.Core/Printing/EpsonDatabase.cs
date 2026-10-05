@@ -81,9 +81,22 @@ public sealed class EpsonDatabase
     public int ModelCount => _models.Count;
     public string SourcePath { get; private set; } = "";
 
-    public static EpsonDatabase Load(string path)
+    public static EpsonDatabase Load(string path) => Load(File.ReadAllBytes(path), path);
+
+    /// <summary>The database compiled into this build, or null when the build was made without one.</summary>
+    public static EpsonDatabase? LoadEmbedded()
     {
-        var bytes = File.ReadAllBytes(path);
+        using var res = typeof(EpsonDatabase).Assembly.GetManifestResourceStream("epson-database.json");
+        if (res is null) return null;
+        using var ms = new MemoryStream();
+        res.CopyTo(ms);
+        return Load(ms.ToArray(), "built in");
+    }
+
+    public static bool HasEmbedded => typeof(EpsonDatabase).Assembly.GetManifestResourceInfo("epson-database.json") is not null;
+
+    static EpsonDatabase Load(byte[] bytes, string source)
+    {
         if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) bytes = bytes[3..]; // a UTF-8 byte-order mark is common in files saved by Windows tools
         using var doc = JsonDocument.Parse(bytes, new JsonDocumentOptions { AllowTrailingCommas = true });
         var root = doc.RootElement;
@@ -92,7 +105,7 @@ public sealed class EpsonDatabase
         if (root.TryGetProperty("schema_version", out var v) && v.ValueKind == JsonValueKind.Number && v.GetInt32() != SchemaVersion)
             throw new InvalidDataException($"This database uses format version {v.GetInt32()}; HSA reads version {SchemaVersion}.");
 
-        var db = new EpsonDatabase { SourcePath = path };
+        var db = new EpsonDatabase { SourcePath = source };
         var specCache = new Dictionary<string, EpsonModelSpec>();
         foreach (var m in models.EnumerateObject())
         {

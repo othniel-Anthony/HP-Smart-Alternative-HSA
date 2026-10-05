@@ -46,8 +46,12 @@ public static class EpsonMaintenance
 
     // These end inside remote mode. The exit (ExitRemote) is sent afterwards as its own write: on a real printer an exit that arrives
     // together with a query makes it drop the reply.
-    public static byte[] BuildClean(EpsonCleaning which) =>
-        Concat(Init(), EnterRemote(), Command("CH", 0, which switch { EpsonCleaning.Black => (byte)1, EpsonCleaning.Colour => (byte)2, _ => (byte)0 }));
+    /// <summary>
+    /// "CH" with the nozzle group (0 all, 1 black, 2 colours). Setting bit 0x10 on that byte makes it Epson's power cleaning, which pushes far more
+    /// ink through the print head (and into the waste pads) than a normal cleaning.
+    /// </summary>
+    public static byte[] BuildClean(EpsonCleaning which, bool power = false) =>
+        Concat(Init(), EnterRemote(), Command("CH", 0, (byte)((which switch { EpsonCleaning.Black => 1, EpsonCleaning.Colour => 2, _ => 0 }) | (power ? 0x10 : 0))));
 
     /// <summary>A single "NC" (print nozzle check) command, as the maintained epson_print_conf tool sends it. An older sequence with two extra commands left an L3250 stuck in an error state with the page half out.</summary>
     public static byte[] BuildNozzleCheck() =>
@@ -55,8 +59,12 @@ public static class EpsonMaintenance
 
     public static byte[] BuildStatusQuery() => Concat(Init(), EnterRemote(), Command("ST", 0, 1));
 
+    internal const string NoActivity = "no-activity";
+
     internal static void ThrowIfError(string? finalStatus, string what)
     {
+        if (finalStatus == NoActivity)
+            throw new InvalidOperationException($"The printer did not react to the command for {what}: it stayed idle. Some models only accept this from Epson's own maintenance utility. Use “Open the Epson driver settings” below and look for its Maintenance tab, or print a nozzle check to see whether anything changed.");
         if (finalStatus == "00")
             throw new InvalidOperationException($"The printer reported an error while doing {what} (status 00). Check that paper is loaded and nothing is jammed, look at the printer's lights, then try again. If a sheet is stuck halfway, switch the printer off and on and pull it out gently.");
     }
@@ -90,10 +98,11 @@ public static class EpsonMaintenance
     /// (each cycle waits for the printer to finish and rest briefly before the next). Optionally prints a nozzle check at the end.
     /// </summary>
     public static async Task CleanHeadAsync(PrinterDevice dev, EpsonCleaning which, int cycles = 1, bool nozzleCheckAfter = false,
-        IProgress<string>? progress = null, CancellationToken ct = default)
+        IProgress<string>? progress = null, CancellationToken ct = default, bool power = false)
     {
-        Diag.Log($"Epson: head cleaning ({which}, {cycles} cycle(s)) on '{dev.Name}'");
-        await CleanCyclesAsync(() => OpenPort(dev), which, Math.Clamp(cycles, 1, 3), TimeSpan.FromSeconds(4), TimeSpan.FromMinutes(5), progress, ct).ConfigureAwait(false);
+        if (power) cycles = 1; // a power flush is already the strongest single step; it is never repeated automatically
+        Diag.Log($"Epson: head cleaning ({which}{(power ? ", POWER" : "")}, {cycles} cycle(s)) on '{dev.Name}'");
+        await CleanCyclesAsync(() => OpenPort(dev), which, Math.Clamp(cycles, 1, 3), TimeSpan.FromSeconds(4), TimeSpan.FromMinutes(power ? 10 : 5), progress, ct, power).ConfigureAwait(false);
         if (nozzleCheckAfter)
         {
             progress?.Report("Printing the nozzle check…");
@@ -103,12 +112,12 @@ public static class EpsonMaintenance
     }
 
     internal static async Task CleanCyclesAsync(Func<Port> open, EpsonCleaning which, int cycles, TimeSpan rest, TimeSpan maxPerCycle,
-        IProgress<string>? progress, CancellationToken ct)
+        IProgress<string>? progress, CancellationToken ct, bool power = false)
     {
         for (int i = 1; i <= cycles; i++)
         {
-            progress?.Report(cycles == 1 ? "Cleaning…" : $"Cleaning {i} of {cycles}…");
-            using (var port = open()) ThrowIfError(await port.RunAsync(BuildClean(which), ct, maxPerCycle).ConfigureAwait(false), "the cleaning");
+            progress?.Report(power ? "Power flushing…" : cycles == 1 ? "Cleaning…" : $"Cleaning {i} of {cycles}…");
+            using (var port = open()) ThrowIfError(await port.RunAsync(BuildClean(which, power), ct, maxPerCycle, expectActivity: true).ConfigureAwait(false), power ? "the power flush" : "the cleaning");
             if (i < cycles)
             {
                 progress?.Report($"Cleaning {i} of {cycles} finished. Resting a moment…");
@@ -151,6 +160,7 @@ public static class EpsonMaintenance
         public TimeSpan PollEvery { get; init; } = TimeSpan.FromSeconds(1);
         public TimeSpan NoBusyGrace { get; init; } = TimeSpan.FromSeconds(10);
         public TimeSpan ErrorGrace { get; init; } = TimeSpan.FromSeconds(15);
+        public TimeSpan ActivityWindow { get; init; } = TimeSpan.FromSeconds(9);
 
         public async Task SendAsync(byte[] data, CancellationToken ct)
         {
@@ -162,7 +172,7 @@ public static class EpsonMaintenance
         /// Send commands, then keep asking the printer for its status until it is idle again, and only then leave remote mode.
         /// Leaving earlier (the exit ends with ESC @, a reset) cuts a nozzle-check page off half way.
         /// </summary>
-        public async Task<string?> RunAsync(byte[] commands, CancellationToken ct, TimeSpan maxWait, bool endPage = false)
+        public async Task<string?> RunAsync(byte[] commands, CancellationToken ct, TimeSpan maxWait, bool endPage = false, bool expectActivity = false)
         {
             await SendAsync(commands, ct).ConfigureAwait(false);
             await Task.Delay(StartDelay, ct).ConfigureAwait(false);
@@ -178,6 +188,10 @@ public static class EpsonMaintenance
                 Diag.Log($"Epson: status {code ?? "(no answer)"} after {(DateTime.UtcNow - started).TotalSeconds:0.0} s");
                 bool idle = code == "04";
                 if (!idle) sawBusy = true; // no answer at all usually means it is too busy printing to talk
+
+                // A command the printer does not understand leaves it plainly idle (04) the whole time. Cleaning always takes tens of seconds,
+                // so a printer that is still idle after the activity window ignored the command: say so instead of claiming it worked.
+                if (expectActivity && !sawBusy && DateTime.UtcNow - started > ActivityWindow) { last = NoActivity; break; }
                 idleInARow = idle ? idleInARow + 1 : 0;
                 // idle counts only once the printer has been seen working; a printer that never shows as busy is given a grace period, then released
                 if (idleInARow >= 2 && (sawBusy || DateTime.UtcNow - started > NoBusyGrace)) break;

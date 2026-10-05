@@ -15,6 +15,7 @@
 #>
 param(
   [switch]$SkipTests,
+  [switch]$NoDatabase,   # leave the Epson model database out of the exe even if Resources\epson-database.json exists (use this for public releases)
   [string]$PfxPath,
   [string]$PfxPassword,
   [string]$CertThumbprint,
@@ -39,7 +40,12 @@ New-Item -ItemType Directory -Force dist | Out-Null
 foreach ($old in "dist/publish", "dist/stage", "dist/HSA-$version-win-x64.exe", "dist/HSA-$version-win-x64.zip") {
   if (Test-Path $old) { Remove-Item $old -Recurse -Force }
 }
-dotnet publish src/PrintHub.App -c Release -r win-x64 -p:Platform=x64 `
+$epsonDb = 'src/PrintHub.Core/Resources/epson-database.json'
+if ($NoDatabase) { Write-Host 'Epson model database: LEFT OUT of this build (-NoDatabase).' -ForegroundColor Green }
+elseif (Test-Path $epsonDb) { Write-Host "Epson model database: BUILT IN from $epsonDb. It is third-party data that is not in the repository; make sure you may redistribute it before publishing this build." -ForegroundColor Yellow }
+else { Write-Host 'Epson model database: not built in (the counter reset will look for epson-database.json next to HSA.exe or in its data folder).' }
+$dbProp = if ($NoDatabase) { '-p:EmbedEpsonDatabase=false' } else { '-p:EmbedEpsonDatabase=true' }
+dotnet publish src/PrintHub.App -c Release -r win-x64 -p:Platform=x64 $dbProp `
   -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:PublishReadyToRun=false `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true `
   -p:DebugType=none -p:DebugSymbols=false -o dist/publish --nologo -v q

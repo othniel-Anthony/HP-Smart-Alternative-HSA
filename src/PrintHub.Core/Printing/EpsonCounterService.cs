@@ -68,22 +68,40 @@ public static class EpsonCounterService
 
     static (string Path, DateTime Stamp, EpsonDatabase Db)? _cache;
 
-    /// <summary>Load the database from wherever it is found (nothing to click). The parsed file is reused until it changes on disk.</summary>
+    /// <summary>
+    /// Load the database: a file the user put in HSA's data folder or next to the program wins (so a newer database can replace the built-in one),
+    /// otherwise the database compiled into this build. Nothing to click. The parsed file is reused until it changes on disk.
+    /// </summary>
     public static EpsonDatabase? TryLoadDatabase(out string? error)
     {
         error = null;
         var path = FindDatabase();
-        if (path is null) return null;
+        if (path is not null)
+        {
+            try
+            {
+                var stamp = File.GetLastWriteTimeUtc(path);
+                if (_cache is { } c && c.Path == path && c.Stamp == stamp) return c.Db;
+                var db = EpsonDatabase.Load(path);
+                _cache = (path, stamp, db);
+                return db;
+            }
+            catch (Exception ex)
+            {
+                error = $"{Path.GetFileName(path)}: {ex.Message}"; // a broken override must not hide the built-in database
+                Diag.Log("Epson database file could not be read: " + error);
+            }
+        }
         try
         {
-            var stamp = File.GetLastWriteTimeUtc(path);
-            if (_cache is { } c && c.Path == path && c.Stamp == stamp) return c.Db;
-            var db = EpsonDatabase.Load(path);
-            _cache = (path, stamp, db);
-            return db;
+            if (_embedded is null && EpsonDatabase.HasEmbedded) _embedded = EpsonDatabase.LoadEmbedded();
+            if (_embedded is not null) return _embedded;
         }
-        catch (Exception ex) { error = ex.Message; return null; }
+        catch (Exception ex) { error ??= "built-in database: " + ex.Message; }
+        return null;
     }
+
+    static EpsonDatabase? _embedded;
 
     // ---------------------------------------------------------------- public entry points (real printer)
 

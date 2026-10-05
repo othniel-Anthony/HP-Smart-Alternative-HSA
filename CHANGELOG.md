@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.1
+- **The public release has no Epson model database inside it.** `build.ps1 -NoDatabase` leaves it out; the counter reset then needs an `epson-database.json` that you provide (data folder, or next to `HSA.exe`, or *Use a different database file…*).
+- **Tidier Epson maintenance page.** Cleaning is now a single "Clean print head" drop-down (levels 1-3, black only, colours only, power ink flush), next to the nozzle check and a "print a nozzle check afterwards" tick box. The printer reset is one line. The waste ink counters are in a collapsed section, with the database status and "use a different database file" tucked at the bottom of it. The long explanations moved into the confirmation dialogs, where they matter.
+
+## 0.13.0
+- **Power ink flush** on the Epson maintenance page: Epson's own power cleaning (the standard cleaning command with its "power" flag), which pushes far more ink through the print head to clear stubborn clogs. It asks for confirmation, runs once, and can print a nozzle check afterwards.
+- **The Epson model database is built into the app** when it is present at build time, so the counter reset needs no file to be chosen. A file in HSA's data folder or next to `HSA.exe` still overrides it. The database is not part of the source repository.
+- **Cleaning now tells you when a printer ignores the command.** A cleaning or power flush that leaves the printer idle is reported ("the printer did not react") instead of being counted as done, with the driver's own Maintenance tab as the fallback.
+- Checked on a real L3150: a normal cleaning runs for about 2.5 minutes (status 07) and then returns to idle.
+
 ## 0.12.3
 - **Epson nozzle check prints one pattern and pushes the sheet out.** It used to send three commands and then a reset, which left the page stuck half way. It now sends a single nozzle-check command, waits until the printer is idle again, leaves remote mode without a reset and sends the end-of-page (form feed). Checked on real Epson L3250 and L3150 printers; adding a "job end" command made the pattern print twice, so it is not used.
 - If a printer reports its error state during a nozzle check or cleaning, HSA stops waiting after 15 seconds and says so (check paper and jams) instead of waiting for minutes.

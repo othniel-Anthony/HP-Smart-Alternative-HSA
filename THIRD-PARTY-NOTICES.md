@@ -35,4 +35,6 @@ SOFTWARE.
 
 ## Epson model database
 
-HSA does **not** include the per-model data (memory addresses, access keys) that the waste-ink counter reset needs. The user supplies a database file, which HSA only reads; it is never part of this repository or its releases.
+HSA's public releases do **not** contain any per-model Epson data, and the repository contains none either. The counter reset reads a user-supplied `epson-database.json` from HSA's data folder or from next to `HSA.exe` (or one chosen with *Use a different database file…*).
+
+A build made on a machine that has `src/PrintHub.Core/Resources/epson-database.json` embeds that file in `HSA.exe`, unless it is built with `build.ps1 -NoDatabase`. The file is git-ignored. The database the maintainer uses privately is the `database.json` of the EWR 1.4.1 tool, whose licence terms are not stated, so builds that embed it are not published.

@@ -30,11 +30,11 @@ public sealed partial class MaintenancePage : Page
 
         Notice.IsOpen = true;
         if (!epson) { Notice.Severity = InfoBarSeverity.Informational; Notice.Title = "Choose an Epson printer"; Notice.Message = "These tools are for Epson printers."; }
-        else if (!usb) { Notice.Severity = InfoBarSeverity.Warning; Notice.Title = "Printer not found on USB"; Notice.Message = "Cleaning, reset and the counters work over the USB cable. Plug the printer in and switch it on (it can stay on your network too), or use the Epson driver settings below."; }
+        else if (!usb) { Notice.Severity = InfoBarSeverity.Warning; Notice.Title = "Printer not found on USB"; Notice.Message = "These tools work over the USB cable. Plug the printer in and switch it on."; }
         else Notice.IsOpen = false;
 
         bool can = usb && !_busy;
-        foreach (var b in new[] { NozzleButton, CleanButton, CleanLevel2Button, CleanLevel3Button, CleanBlackButton, CleanColourButton, ResetButton }) b.IsEnabled = can;
+        foreach (var b in new Control[] { NozzleButton, CleanMenuButton, ResetButton }) b.IsEnabled = can;
         bool win = d?.SpoolerName is not null;
         DriverButton.IsEnabled = QueueButton.IsEnabled = win;
 
@@ -43,9 +43,9 @@ public sealed partial class MaintenancePage : Page
         CheckButton.IsEnabled = can && _db is not null;
         CountersResetButton.IsEnabled = can && _db is not null;
         UndoButton.IsEnabled = can && _db is not null && _analysis?.Spec is { } sp && EpsonCounterService.LatestBackup(sp.Key) is not null;
-        DbText.Text = _db is not null ? $"Model database loaded automatically: {_db.ModelCount} models ({_db.SourcePath})." :
+        DbText.Text = _db is not null ? (_db.SourcePath == "built in" ? $"Model database: built in ({_db.ModelCount} models)." : $"Model database loaded automatically: {_db.ModelCount} models ({_db.SourcePath}).") + (_dbError is not null ? $" (A database file that was found could not be read and was ignored: {_dbError})" : "") :
             _dbError is not null ? $"The model database could not be read: {_dbError}" :
-            "No model database is loaded. Put epson-database.json in HSA's data folder (or next to HSA.exe) and it is picked up automatically, or choose the file below. HSA does not include one.";
+            "No model database is loaded: put epson-database.json in HSA's data folder or next to HSA.exe, or choose a file.";
     }
 
     async Task RunAsync(string startText, Func<CancellationToken, Task<string>> work, bool checkLinkFirst = true, TimeSpan? timeout = null)
@@ -81,7 +81,7 @@ public sealed partial class MaintenancePage : Page
 
     async void Clean_Click(object sender, RoutedEventArgs e)
     {
-        var tag = (string)((Button)sender).Tag;
+        var tag = (string)((FrameworkElement)sender).Tag;
         bool isLevel = int.TryParse(tag, out var level);
         var which = isLevel ? EpsonCleaning.All : Enum.Parse<EpsonCleaning>(tag);
         int cycles = isLevel ? level : 1;
@@ -98,6 +98,35 @@ public sealed partial class MaintenancePage : Page
             await EpsonMaintenance.CleanHeadAsync(App.State.Current!, which, cycles, check, progress, ct);
             return check ? "Cleaning finished. A nozzle check was printed: hold it up to the light to see the result." : "Cleaning finished. Print a nozzle check to see the result.";
         }, timeout: TimeSpan.FromMinutes(14));
+    }
+
+    async void PowerFlush_Click(object sender, RoutedEventArgs e)
+    {
+        var understand = new CheckBox { Content = "I understand this uses a lot of ink and fills the waste ink pads faster." };
+        var panel = new StackPanel { Spacing = 12, MaxWidth = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Text = "A power ink flush runs Epson's power cleaning once: far more ink than a normal cleaning goes through the print head and into the waste pads. It takes several minutes. " +
+                   "Print a nozzle check first, try the cleaning levels, and use this only if lines are still missing. Don't switch the printer off while it runs.",
+        });
+        panel.Children.Add(understand);
+        var dlg = new ContentDialog
+        {
+            XamlRoot = XamlRoot, Title = "Power ink flush?", Content = panel,
+            PrimaryButtonText = "Start the flush", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, IsPrimaryButtonEnabled = false,
+        };
+        understand.Checked += (_, _) => dlg.IsPrimaryButtonEnabled = true;
+        understand.Unchecked += (_, _) => dlg.IsPrimaryButtonEnabled = false;
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary) return;
+
+        bool check = CheckAfter.IsChecked == true;
+        await RunAsync("Power ink flush running. This takes several minutes; don't switch the printer off…", async ct =>
+        {
+            var progress = new Progress<string>(t => ResultText.Text = t);
+            await EpsonMaintenance.CleanHeadAsync(App.State.Current!, EpsonCleaning.All, 1, check, progress, ct, power: true);
+            return check ? "Power ink flush finished. A nozzle check was printed: hold it up to the light to see the result." : "Power ink flush finished. Print a nozzle check to see the result.";
+        }, timeout: TimeSpan.FromMinutes(20));
     }
 
     async void Reset_Click(object sender, RoutedEventArgs e)

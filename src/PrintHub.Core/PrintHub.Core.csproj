@@ -14,4 +14,9 @@
     <!-- the colour test page printed by the Home screen's "Print test page" button -->
     <EmbeddedResource Include="Resources\print-color-test-page-basic-1.pdf" LogicalName="print-color-test-page-basic-1.pdf" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The Epson model database is built in when this file is present at build time. It is deliberately NOT part of the repository
+         (Resources\epson-database.json is git-ignored); pass -p:EmbedEpsonDatabase=false (build.ps1 -NoDatabase) to leave it out even when the file exists. Without it, HSA looks for epson-database.json in its data folder or next to HSA.exe. -->
+    <EmbeddedResource Include="Resources\epson-database.json" LogicalName="epson-database.json" Condition="'$(EmbedEpsonDatabase)' != 'false' And Exists('Resources\epson-database.json')" />
+  </ItemGroup>
 </Project>
