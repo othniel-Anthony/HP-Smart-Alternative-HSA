@@ -28,6 +28,9 @@ public sealed class PrinterDevice
 
     public bool IsHp => Manufacturer.Contains("HP", StringComparison.OrdinalIgnoreCase) || Manufacturer.Contains("Hewlett", StringComparison.OrdinalIgnoreCase)
                         || Name.StartsWith("HP ", StringComparison.OrdinalIgnoreCase);
+    /// <summary>True for Epson printers (by maker, name, Windows driver or USB vendor id). Gates the Epson-only maintenance tools.</summary>
+    public bool IsEpson => Manufacturer.Contains("epson", StringComparison.OrdinalIgnoreCase) || Name.Contains("epson", StringComparison.OrdinalIgnoreCase)
+                           || (SpoolerDriver?.Contains("epson", StringComparison.OrdinalIgnoreCase) ?? false) || UsbCandidates.Any(u => u.VendorId == 0x04B8);
     public bool HasNetwork => IppUri is not null || EsclUri is not null;
     public bool HasUsbHttp => Usb is { Openable: true } || UsbCandidates.Any(u => u.Openable);
     public bool CanScan => EsclUri is not null || WiaDeviceId is not null || HasUsbHttp;

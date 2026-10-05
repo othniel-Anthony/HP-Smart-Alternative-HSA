@@ -15,7 +15,7 @@ public sealed partial class MainWindow : Window
     readonly Dictionary<string, Type> _pages = new()
     {
         ["home"] = typeof(HomePage), ["print"] = typeof(PrintPage), ["scan"] = typeof(ScanPage), ["copy"] = typeof(CopyPage),
-        ["shortcuts"] = typeof(ShortcutsPage), ["printer"] = typeof(PrinterPage), ["web"] = typeof(WebPage), ["settings"] = typeof(SettingsPage),
+        ["shortcuts"] = typeof(ShortcutsPage), ["printer"] = typeof(PrinterPage), ["web"] = typeof(WebPage), ["maintenance"] = typeof(MaintenancePage), ["settings"] = typeof(SettingsPage),
     };
     bool _updatingCombo;
     DispatcherQueueTimer? _toastTimer;
@@ -94,6 +94,11 @@ public sealed partial class MainWindow : Window
     void UpdateHeader()
     {
         var s = App.State;
+        // Epson-only tools: the entry exists only while an Epson printer is selected
+        bool epson = s.Current?.IsEpson == true;
+        MaintenanceItem.Visibility = epson ? Visibility.Visible : Visibility.Collapsed;
+        if (!epson && ReferenceEquals(Nav.SelectedItem, MaintenanceItem)) NavigateTo("home");
+
         BusyRing.IsActive = s.Discovering || s.Connecting;
         if (s.Current is null) { StateDot.Fill = new SolidColorBrush(Colors.Gray); if (s.Devices.Count > 0 || s.Discovering) StateText.Text = s.Discovering ? "Searching for printers…" : "Choose a printer"; return; }
 

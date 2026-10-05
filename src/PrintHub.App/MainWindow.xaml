@@ -40,6 +40,10 @@
         <NavigationViewItem Content="Printer web page" Tag="web">
           <NavigationViewItem.Icon><FontIcon Glyph="&#xE774;" /></NavigationViewItem.Icon>
         </NavigationViewItem>
+        <!-- shown only while an Epson printer is selected -->
+        <NavigationViewItem x:Name="MaintenanceItem" Content="Epson maintenance" Tag="maintenance" Visibility="Collapsed">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
       </NavigationView.MenuItems>
       <NavigationView.FooterMenuItems>
         <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />

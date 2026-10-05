@@ -43,6 +43,31 @@ public static class SpoolerPrinters
     [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern bool SetDefaultPrinter(string name);
 
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool OpenPrinter(string name, out IntPtr handle, ref PRINTER_DEFAULTS defaults);
+    [DllImport("winspool.drv", SetLastError = true)]
+    static extern bool ClosePrinter(IntPtr handle);
+    [DllImport("winspool.drv", SetLastError = true)]
+    static extern bool SetPrinter(IntPtr handle, uint level, IntPtr info, uint command);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct PRINTER_DEFAULTS { public IntPtr pDatatype; public IntPtr pDevMode; public uint DesiredAccess; }
+
+    /// <summary>Cancel every job waiting on a Windows queue. Needs permission to manage the printer; returns false (with the Windows error) when refused.</summary>
+    public static bool Purge(string printer, out string error)
+    {
+        error = "";
+        var defaults = new PRINTER_DEFAULTS { DesiredAccess = 0x0004 /* PRINTER_ACCESS_ADMINISTER */ };
+        if (!OpenPrinter(printer, out var h, ref defaults)) { error = new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()).Message; return false; }
+        try
+        {
+            if (SetPrinter(h, 0, IntPtr.Zero, 3 /* PRINTER_CONTROL_PURGE */)) return true;
+            error = new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()).Message;
+            return false;
+        }
+        finally { ClosePrinter(h); }
+    }
+
     public static string? GetDefault()
     {
         uint size = 0;

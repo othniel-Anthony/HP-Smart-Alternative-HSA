@@ -29,6 +29,8 @@ Grab `HSA-<version>-win-x64.exe` from the [latest release](https://github.com/ot
 
 **Copy.** Scan and print in one go, with copies, colour, quality, paper and scaling. There's an ID card mode that scans both sides and puts them on one page.
 
+**Epson maintenance.** When an Epson printer is selected, an extra *Epson maintenance* page appears. Over the USB cable you can print a nozzle check, clean the print head, reset the printer (clears the Windows queue and sends it a reset) and reset the **waste-ink counters** (the "Service required" state). The counter reset reads the counters, saves a backup of the printer's memory, writes the model's reset values, checks each one, and puts everything back if the printer refuses a write; an *Undo last reset* button restores the backup. It needs a model database file, which HSA does not include (see below), and it only clears the counter: clean or replace the waste ink pads first, or ink can leak.
+
 **Shortcuts.** Save a scan or copy with all its settings as a one-click card: "Scan receipt", "Copy ID card", whatever you do often. You can have it save to a particular folder, open the result, or print it as well.
 
 **Check on the printer.** See ink or toner levels, the printer's status and any warnings, and the jobs waiting on it (you can cancel them). **Print test page** on the home screen prints a colour test page, and there's a separate diagnostic page with colour patches, gradients and a nozzle grid for chasing print-quality problems. **Find this printer** makes it flash or beep. **Copy support report** puts the details you'd want in a bug report on the clipboard.
@@ -58,6 +60,10 @@ It hasn't been tried on a wide range of real printers yet, so here is what has a
 - Taking a photo with the camera button, and drawing a signature (the signature box opens, but it was only tested without drawing).
 
 If something doesn't work with your printer, please [open an issue](https://github.com/othniel-Anthony/HP-Smart-Alternative-HSA/issues) and paste in the support report (*Printer & supplies → Copy support report*). It's the quickest way to see what your printer is doing.
+
+## Epson counter reset: the model database
+
+The counter reset needs, for each model, the memory addresses and access keys. That data isn't part of HSA. On the *Epson maintenance* page choose **Choose database file…** and pick a JSON file in the format `{"schema_version":4,"specs":{…},"models":{…}}`. HSA copies it into its own data folder and uses it from there. It finds the model from what the printer reports about itself, and refuses to act if the printer and Windows disagree about the model or the model isn't in the file.
 
 ## Printer web page over USB
 

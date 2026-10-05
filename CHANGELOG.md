@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.12.3
+- **Epson nozzle check prints one pattern and pushes the sheet out.** It used to send three commands and then a reset, which left the page stuck half way. It now sends a single nozzle-check command, waits until the printer is idle again, leaves remote mode without a reset and sends the end-of-page (form feed). Checked on real Epson L3250 and L3150 printers; adding a "job end" command made the pattern print twice, so it is not used.
+- If a printer reports its error state during a nozzle check or cleaning, HSA stops waiting after 15 seconds and says so (check paper and jams) instead of waiting for minutes.
+
+## 0.12.1
+- **Cleaning levels.** Head cleaning now comes in three levels (1 = one full cleaning, 2 = two in a row, 3 = three in a row, each waiting for the printer to finish first), with an option to print a nozzle check afterwards. The independent *Black only* and *Colours only* cleanings are unchanged.
+- **The model database is picked up automatically** from HSA's data folder, or from a file named `epson-database.json` next to `HSA.exe`; the page shows where it was loaded from, and an updated file is re-read without restarting.
+
+## 0.12.0
+- **Epson waste-ink counter reset.** On the *Epson maintenance* page: HSA identifies the selected model (from what the printer reports and its Windows name, and refuses if they disagree), reads the counters and shows how full they are, saves a backup of the printer's memory, writes the model's reset values, reads each one back, and undoes everything if the printer refuses a write. *Undo last reset* restores the backup. It uses the printer's USB control channel (IEEE 1284.4 / EPSON-CTRL) and needs a model database file that you provide; HSA does not ship one (see THIRD-PARTY-NOTICES.md for the protocol credit).
+- The Epson nozzle-check and cleaning fix from 0.11.1 and the Epson maintenance page from 0.11.0 are included.
+
+## 0.11.1
+- **Epson nozzle check and head cleaning no longer cut the page short.** HSA used to send the "leave remote mode" reset about a second and a half after the command, which stopped the printer mid-page. It now asks the printer for its status and only releases it once it has finished and is idle again. The Maintenance page tells you to wait until the page is out.
+
+## 0.11.0
+- **New: Epson maintenance** (only appears in the menu while an Epson printer is selected). Print a nozzle check, clean the print head (everything, black only, or colours only) and reset the printer (cancels the jobs waiting in Windows and sends the printer a standard reset). The commands go straight to the printer's USB port using Epson's documented remote-mode commands, with the printer's answer checked first, so nothing is sent to the wrong printer when several are connected. The page also opens the Epson driver's settings.
+- Not included on purpose: resetting the waste-ink / "service required" counter. It means writing to the printer's memory with commands that differ per model, and it hides a real wear warning; the page explains this instead.
+
 ## 0.10.6
 - **One printer, not three.** A USB printer used to show up as separate entries when Windows, the USB cable and the scanner driver spelled its name differently ("HP DJ 1110 series" for the print queue, "DeskJet 1110 series" over USB). Those entries are now recognised as one printer, so the web page, ink levels and scanner reach the printer you actually select, and Copy (which needs both a scanner and a printer) works.
 - **HP ink levels over USB and the network** for printers that have no IPP, such as many USB-only HP inkjets (read from HP's web services).

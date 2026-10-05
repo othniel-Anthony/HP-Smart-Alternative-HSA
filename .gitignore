@@ -13,3 +13,7 @@ dist/
 # developer-only: unit tests, fake printer and UI tests stay on the author's PC, not in the public repo
 /tests/
 /PrintHub.Dev.sln
+
+# per-model Epson data supplied by the user; never part of the repository
+epson-database.json
+database.json
