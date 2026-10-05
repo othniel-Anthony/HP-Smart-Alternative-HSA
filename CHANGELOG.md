@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.2
+- **The release build includes the Epson model database again**, so the waste-ink counter reset works without choosing a file. It is the Apache-2.0 `database.json` from the EWR project; its licence text and the credits for the projects it builds on (reinkpy, ez-reset, reink, Gutenprint) are in `THIRD-PARTY-NOTICES.md` and the `licenses` folder of the zip. A file in HSA's data folder or next to `HSA.exe` still overrides it.
+
 ## 0.13.1
 - **The public release has no Epson model database inside it.** `build.ps1 -NoDatabase` leaves it out; the counter reset then needs an `epson-database.json` that you provide (data folder, or next to `HSA.exe`, or *Use a different database file…*).
 - **Tidier Epson maintenance page.** Cleaning is now a single "Clean print head" drop-down (levels 1-3, black only, colours only, power ink flush), next to the nozzle check and a "print a nozzle check afterwards" tick box. The printer reset is one line. The waste ink counters are in a collapsed section, with the database status and "use a different database file" tucked at the bottom of it. The long explanations moved into the confirmation dialogs, where they matter.

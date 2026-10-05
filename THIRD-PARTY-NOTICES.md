@@ -33,8 +33,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Epson model database
+## Epson model database (EWR)
 
-HSA's public releases do **not** contain any per-model Epson data, and the repository contains none either. The counter reset reads a user-supplied `epson-database.json` from HSA's data folder or from next to `HSA.exe` (or one chosen with *Use a different database file…*).
+The Epson model database built into release builds of `HSA.exe` (per-model memory addresses and access keys for the waste-ink counter reset) is the `database.json` of **EWR - Epson Waste Reset** by RxNaison, taken unmodified from EWR 1.4.1.
 
-A build made on a machine that has `src/PrintHub.Core/Resources/epson-database.json` embeds that file in `HSA.exe`, unless it is built with `build.ps1 -NoDatabase`. The file is git-ignored. The database the maintainer uses privately is the `database.json` of the EWR 1.4.1 tool, whose licence terms are not stated, so builds that embed it are not published.
+- Project: https://github.com/RxNaison/Epson-Waste-Reset
+- Licence: Apache License 2.0, Copyright 2026 RxNaison. The full text is in `docs/licenses/EWR-LICENSE.txt` (and in the `licenses` folder of the release zip).
+
+EWR states that its database is assembled by an automated pipeline from four upstream open-source projects, whose work this therefore also builds on:
+
+- reinkpy (https://codeberg.org/atufi/reinkpy)
+- ez-reset (https://github.com/CiRIP/ez-reset)
+- reink (https://github.com/lion-simba/reink)
+- Gutenprint (https://gutenprint.sourceforge.net/)
+
+The file is kept out of the source repository (it is git-ignored); release builds embed it when `src/PrintHub.Core/Resources/epson-database.json` is present at build time. A file named `epson-database.json` in HSA's data folder or next to `HSA.exe` overrides the built-in one.

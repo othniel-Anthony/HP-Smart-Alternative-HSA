@@ -42,7 +42,7 @@ foreach ($old in "dist/publish", "dist/stage", "dist/HSA-$version-win-x64.exe", 
 }
 $epsonDb = 'src/PrintHub.Core/Resources/epson-database.json'
 if ($NoDatabase) { Write-Host 'Epson model database: LEFT OUT of this build (-NoDatabase).' -ForegroundColor Green }
-elseif (Test-Path $epsonDb) { Write-Host "Epson model database: BUILT IN from $epsonDb. It is third-party data that is not in the repository; make sure you may redistribute it before publishing this build." -ForegroundColor Yellow }
+elseif (Test-Path $epsonDb) { Write-Host "Epson model database: BUILT IN from $epsonDb. It is the EWR database (Apache-2.0, RxNaison): THIRD-PARTY-NOTICES.md and docs/licenses/EWR-LICENSE.txt must ship with the build, and the zip includes them." -ForegroundColor Yellow }
 else { Write-Host 'Epson model database: not built in (the counter reset will look for epson-database.json next to HSA.exe or in its data folder).' }
 $dbProp = if ($NoDatabase) { '-p:EmbedEpsonDatabase=false' } else { '-p:EmbedEpsonDatabase=true' }
 dotnet publish src/PrintHub.App -c Release -r win-x64 -p:Platform=x64 $dbProp `
@@ -82,7 +82,9 @@ $stage = "dist/stage"
 New-Item -ItemType Directory $stage -Force | Out-Null
 Copy-Item dist/publish/HSA.exe $stage
 Copy-Item installer/*.ps1 $stage
-Copy-Item README.md, CHANGELOG.md $stage
+Copy-Item README.md, CHANGELOG.md, THIRD-PARTY-NOTICES.md $stage
+New-Item -ItemType Directory "$stage/licenses" -Force | Out-Null
+Copy-Item docs/licenses/* "$stage/licenses"
 $zip = "dist/HSA-$version-win-x64.zip"
 Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
 Remove-Item $stage -Recurse -Force

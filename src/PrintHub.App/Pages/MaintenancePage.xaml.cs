@@ -43,7 +43,7 @@ public sealed partial class MaintenancePage : Page
         CheckButton.IsEnabled = can && _db is not null;
         CountersResetButton.IsEnabled = can && _db is not null;
         UndoButton.IsEnabled = can && _db is not null && _analysis?.Spec is { } sp && EpsonCounterService.LatestBackup(sp.Key) is not null;
-        DbText.Text = _db is not null ? (_db.SourcePath == "built in" ? $"Model database: built in ({_db.ModelCount} models)." : $"Model database loaded automatically: {_db.ModelCount} models ({_db.SourcePath}).") + (_dbError is not null ? $" (A database file that was found could not be read and was ignored: {_dbError})" : "") :
+        DbText.Text = _db is not null ? (_db.SourcePath == "built in" ? $"Model database: built in ({_db.ModelCount} models, from the Apache-2.0 EWR project; see THIRD-PARTY-NOTICES)." : $"Model database loaded automatically: {_db.ModelCount} models ({_db.SourcePath}).") + (_dbError is not null ? $" (A database file that was found could not be read and was ignored: {_dbError})" : "") :
             _dbError is not null ? $"The model database could not be read: {_dbError}" :
             "No model database is loaded: put epson-database.json in HSA's data folder or next to HSA.exe, or choose a file.";
     }
