@@ -77,20 +77,32 @@ public sealed class UpdateManager
     {
         if (Info is null || _busy) return;
         _busy = true; Progress = 0; Set(UpdateState.Downloading, $"Downloading version {Info.Version.ToString(3)}…");
+        // a download can stall (no data for 30 s); it is then tried again, up to three times, before the bar offers "Try again"
+        Exception? last = null;
         try
         {
             using var http = UpdateService.CreateClient(AppState.Version);
-            var progress = new Progress<double>(p => { Progress = p; Changed?.Invoke(); });
-            _readyPath = await UpdateService.DownloadAsync(http, Info, progress);
-            AppLog.Write($"Update downloaded and verified: {_readyPath}");
-            Set(UpdateState.Ready, $"Version {Info.Version.ToString(3)} is ready to install.");
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    Progress = 0;
+                    var progress = new Progress<double>(p => { Progress = p; Changed?.Invoke(); });
+                    _readyPath = await UpdateService.DownloadAsync(http, Info, progress);
+                    AppLog.Write($"Update downloaded and verified: {_readyPath}");
+                    Set(UpdateState.Ready, $"Version {Info.Version.ToString(3)} is ready to install.");
+                    return;
+                }
+                catch (Exception ex) when (ex is TimeoutException or HttpRequestException or IOException)
+                {
+                    last = ex; AppLog.Write($"Update download attempt {attempt} failed: {ex.Message}");
+                    if (attempt < 3) await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            AppLog.Write("Update download failed: " + ex.Message);
-            Set(UpdateState.Failed, "The update could not be downloaded: " + ex.Message);
-        }
+        catch (Exception ex) { last = ex; AppLog.Write("Update download failed: " + ex.Message); }
         finally { _busy = false; }
+        Set(UpdateState.Failed, "The update could not be downloaded: " + last?.Message);
     }
 
     /// <summary>Starts the verified update and closes HSA; it comes back in the new version. Returns false (after opening the release page) when this copy cannot be replaced.</summary>

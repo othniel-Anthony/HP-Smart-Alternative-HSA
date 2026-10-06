@@ -119,6 +119,17 @@ public static class UpdateService
         return null;
     }
 
+    /// <summary>A download that receives nothing for this long has stalled and is given up (and tried again by the caller). Shortened by tests.</summary>
+    internal static TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
+
+    static async Task<T> WithinStallTimeout<T>(CancellationToken ct, Func<CancellationToken, Task<T>> action)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(StallTimeout);
+        try { return await action(cts.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException($"GitHub did not answer for {StallTimeout.TotalSeconds:0} seconds."); }
+    }
+
     /// <summary>A real HSA exe is about 160 MB; anything tiny is not one. Lowered by tests.</summary>
     internal static long MinExeSize = 1_000_000;
 
@@ -131,7 +142,7 @@ public static class UpdateService
         Directory.CreateDirectory(folder);
         if (info.ExeSize < MinExeSize || info.ExeSize > 800_000_000) throw new InvalidOperationException("The release lists an unexpected file size, so the update was not downloaded.");
 
-        var sums = await http.GetStringAsync(info.SumsUrl, ct).ConfigureAwait(false);
+        var sums = await WithinStallTimeout(ct, t => http.GetStringAsync(info.SumsUrl, t)).ConfigureAwait(false);
         var expected = FindHash(sums, info.ExeName) ?? throw new InvalidOperationException($"The release has no checksum for {info.ExeName}, so the update was not installed.");
 
         var final = Path.Combine(folder, info.ExeName);
@@ -140,13 +151,13 @@ public static class UpdateService
         var part = final + ".partial";
         try
         {
-            using (var resp = await http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
+            using (var resp = await WithinStallTimeout(ct, t => http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, t)).ConfigureAwait(false))
             {
                 resp.EnsureSuccessStatusCode();
                 await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                 await using var dst = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 var buf = new byte[1 << 16]; long done = 0; int n;
-                while ((n = await src.ReadAsync(buf, ct).ConfigureAwait(false)) > 0)
+                while ((n = await WithinStallTimeout(ct, async t => await src.ReadAsync(buf, t).ConfigureAwait(false)).ConfigureAwait(false)) > 0)
                 {
                     await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
                     done += n; if (done > info.ExeSize) throw new InvalidDataException("The download is larger than the release says, so it was discarded.");

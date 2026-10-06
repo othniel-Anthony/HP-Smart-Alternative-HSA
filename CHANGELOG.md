@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.3
+- **A stalled update download no longer hangs.** In a real test one update download received no data for well over a minute while another copy fetched the same file in 12 seconds, and HSA kept showing "Downloading…" because nothing noticed. A download that receives nothing for 30 seconds is now given up and tried again automatically (up to three attempts) before the bar offers "Try again", and no half-finished file is kept.
+- Tested with a server that sends half the file and then goes silent. The cause of the original stall (GitHub, the network or something else) is not known.
+
 ## 0.16.2
 - **Uninstall fix.** Removing HSA from *Apps & features* could leave its install folder (with `HSA.exe`) behind: the shortcut and the Apps & features entry were removed, but the folder was deleted only once, about three seconds in, while HSA was still open showing its "was removed" message and the exe was locked. If you took longer than that to click OK, the folder stayed. The clean-up now keeps retrying, once a second, until the folder is gone. A copy installed by 0.16.0 or 0.16.1 gets the fix when it updates to this version.
 - Tested: a unit test that locks a file in the folder for longer than the old wait and then releases it, and a run of the uninstaller on a real single-file exe.
