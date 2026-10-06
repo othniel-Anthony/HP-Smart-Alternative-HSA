@@ -113,10 +113,10 @@ public sealed partial class HpMaintenancePage : Page
 
     // ------------------------------------------------------------------ doing things
 
-    async Task RunAsync(string startText, Func<HttpClient, Uri, IProgress<string>, CancellationToken, Task<string>> work, TimeSpan timeout)
+    async Task<bool> RunAsync(string startText, Func<HttpClient, Uri, IProgress<string>, CancellationToken, Task<string>> work, TimeSpan timeout)
     {
         var s = App.State;
-        if (s.Session?.CreateWebServicesClient() is not { } http || s.Session.HttpBase is not { } baseUri) return;
+        if (s.Session?.CreateWebServicesClient() is not { } http || s.Session.HttpBase is not { } baseUri) return false;
         _busy = true; Update(); Ring.IsActive = true; ResultText.Text = startText;
         try
         {
@@ -127,13 +127,15 @@ public sealed partial class HpMaintenancePage : Page
                 ResultText.Text = await work(http, baseUri, progress, cts.Token);
             }
             App.Window.Toast(ResultText.Text, InfoBarSeverity.Success);
+            return true;
         }
-        catch (OperationCanceledException) { ResultText.Text = "The printer took too long to answer."; }
+        catch (OperationCanceledException) { ResultText.Text = "The printer took too long to answer."; return false; }
         catch (Exception ex)
         {
             AppLog.Write("HP maintenance: " + ex);
             ResultText.Text = "";
             await Ui.MessageAsync(XamlRoot, "That didn't work", ex.Message);
+            return false;
         }
         finally { _busy = false; Ring.IsActive = false; Update(); _ = App.State.RefreshStatusAsync(); }
     }
@@ -164,7 +166,27 @@ public sealed partial class HpMaintenancePage : Page
 
     async void Align_Click(object sender, RoutedEventArgs e)
     {
-        var mode = _info?.AlignmentMode; if (mode is null) return;
+        var info = _info; var mode = info?.AlignmentMode; if (info is null || mode is null) return;
+        if (info.Protocol == HpProtocol.Cdm)
+        {
+            // print the alignment page, let the user put it on the glass, then have the printer scan it
+            var page = info.Jobs.FirstOrDefault(j => j.JobType.Equals("alignmentPage", StringComparison.OrdinalIgnoreCase));
+            if (page is null) return;
+            if (!await Ui.ConfirmAsync(XamlRoot, "Align the printhead?", "The printer prints an alignment page. Then you put it face down on the scanner glass, close the lid, and the printer scans it. Make sure plain paper is loaded.", "Print page")) return;
+            bool printed = await RunAsync("Printing the alignment page…", async (http, baseUri, progress, ct) =>
+            {
+                await HpMaintenance.RunJobAsync(http, baseUri, page, progress, ct);
+                return "The alignment page is printed.";
+            }, TimeSpan.FromMinutes(6));
+            if (!printed) return;
+            if (!await Ui.ConfirmAsync(XamlRoot, "Scan the alignment page", "Put the printed page face down on the scanner glass, close the lid, then press Scan.", "Scan")) { ResultText.Text = "Alignment not finished: the page was printed but not scanned."; return; }
+            await RunAsync("Scanning the alignment page…", async (http, baseUri, progress, ct) =>
+            {
+                await HpMaintenance.StartAlignmentAsync(http, baseUri, mode, progress, ct, protocol: info.Protocol);
+                return "The alignment finished. Print a test page to check the result.";
+            }, TimeSpan.FromMinutes(10));
+            return;
+        }
         string explain = mode switch
         {
             "automatic" => "The printer prints an alignment page and aligns itself. Make sure plain paper is loaded.",
@@ -172,7 +194,7 @@ public sealed partial class HpMaintenancePage : Page
             _ => "This printer needs you to pick the best pattern on a printed page, which HSA does not do yet. You will get the details after pressing Start.",
         };
         if (!await Ui.ConfirmAsync(XamlRoot, "Align the printhead?", explain, "Start")) return;
-        await RunAsync("Aligning the printhead…", (http, baseUri, progress, ct) => HpMaintenance.StartAlignmentAsync(http, baseUri, mode, progress, ct), TimeSpan.FromMinutes(10));
+        await RunAsync("Aligning the printhead…", (http, baseUri, progress, ct) => HpMaintenance.StartAlignmentAsync(http, baseUri, mode, progress, ct, protocol: info.Protocol), TimeSpan.FromMinutes(10));
     }
 
     async void Diagnostics_Click(object sender, RoutedEventArgs e)

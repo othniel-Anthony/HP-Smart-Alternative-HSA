@@ -104,7 +104,8 @@ public static class PrinterTools
             using (hpHttp)
             {
                 sb.AppendLine().AppendLine($"HP web services ({(session.ViaUsb ? "USB" : "network")}, {hpBase})");
-                foreach (var doc in new[] { "DevMgmt/DiscoveryTree.xml", "DevMgmt/ConsumableConfigDyn.xml", "DevMgmt/InternalPrintCap.xml", "DevMgmt/ProductStatusDyn.xml", "Calibration/State" })
+                foreach (var doc in new[] { "DevMgmt/DiscoveryTree.xml", "DevMgmt/ConsumableConfigDyn.xml", "DevMgmt/InternalPrintCap.xml", "DevMgmt/ProductStatusDyn.xml", "Calibration/State",
+                    "cdm/system/v1/identity", "cdm/supply/v1/suppliesPublic", "cdm/report/v1/reports", "cdm/report/v1/print", "cdm/calibration/v1/capabilities", "cdm/calibration/v1/calibration/penAlignSemiauto", "cdm/alert/v1/alerts" })
                 {
                     try
                     {

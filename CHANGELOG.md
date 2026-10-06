@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1
+- **HP maintenance now works on current HP printers over USB.** Tested on a real HP Smart Tank 580-590 over USB: ink levels, cleaning levels 1 to 3, report pages and printhead alignment all ran and the printer reported success. These printers speak HP's newer JSON web services (CDM) rather than the older XML ones, so HSA now supports both and picks the one the printer answers to.
+- **Printhead alignment on these printers is two steps**, as the printer requires: HSA prints the alignment page, you put it face down on the scanner glass, then HSA has the printer scan it and reports the result. (Starting the scan with nothing on the glass makes the printer fail it.)
+- **USB fix:** some HP printers answer an idle read with an empty packet straight away instead of waiting. HSA looped on those without ever timing out, which made the USB connection appear to hang. Reads now time out properly, clearing leftover data finishes, and a failed USB connection is no longer mistaken for a working web server.
+- A job the printer ends in failure (not just one that never starts) is now reported as a failure.
+
 ## 0.15.0
 - **New: Canon maintenance** (in the menu only while a Canon printer is selected; over USB). **Clean print head** (cleaning, deep cleaning, black only, colours only), **Align print head** (automatic alignment) and **Print a report** (nozzle check pattern, head alignment check page). The commands are the ones Canon's own open-source Linux maintenance tool sends. Canon printers report no status over this channel, so the page cannot tell when a job has finished: it waits about as long as the job normally takes before allowing the next one. **Not tested on a real Canon printer**: none has been available.
 - **Canon ink absorber (waste ink pad) counter reset is not included.** Canon only allows it from a service mode entered with a button sequence on the printer, and the commands are model specific and unpublished (the only open work covers one model, the G6020). The page says so.

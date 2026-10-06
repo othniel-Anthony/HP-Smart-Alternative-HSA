@@ -72,6 +72,9 @@ public sealed class PrinterSession : IAsyncDisposable
                         using var quick = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
                         quick.CancelAfter(TimeSpan.FromSeconds(6));
                         using var r = await http.GetAsync(new Uri(candidate.BaseUri, probe), quick.Token);
+                        // the proxy answers 502/504 itself when the USB side failed: that is a dead interface, not a web server
+                        if (r.StatusCode is System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.GatewayTimeout)
+                            throw new IOException("USB transport error: " + await r.Content.ReadAsStringAsync(quick.Token));
                         web = probe.Length == 0 && ((int)r.StatusCode < 400 || r.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden);
                         proxy = candidate;
                         break;
@@ -123,7 +126,8 @@ public sealed class PrinterSession : IAsyncDisposable
         try
         {
             using var http = ViaUsb ? new HttpClient() : new HttpClient(Http.LocalTls.CreateHandler());
-            var list = await LedmClient.GetSuppliesAsync(HttpBase, http, ct).ConfigureAwait(false);
+            var list = await LedmClient.GetSuppliesAsync(HttpBase, http, ct).ConfigureAwait(false)
+                       ?? await Printing.HpCdm.GetSuppliesAsync(HttpBase, http, ct).ConfigureAwait(false);   // current models speak JSON ("CDM") instead of XML
             _ledmAvailable = list is not null; _ledmCheckedAt = DateTime.UtcNow;
             if (list is not null) Diag.Log($"HP web services supplies: {string.Join(", ", list.Select(l => $"{l.Name} {l.Percent}%"))}");
             return list;

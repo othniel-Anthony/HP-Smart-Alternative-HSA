@@ -53,7 +53,7 @@ public static class LedmClient
         return result;
     }
 
-    static (string Name, string Color) Describe(string code, string? station) => code.ToUpperInvariant() switch
+    internal static (string Name, string Color) Describe(string code, string? station) => code.ToUpperInvariant() switch
     {
         "K" => ("Black", "#303030"),
         "C" => ("Cyan", "#00B7EB"),

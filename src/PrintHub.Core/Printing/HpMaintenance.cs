@@ -7,13 +7,17 @@ namespace PrintHub.Core.Printing;
 public enum HpJobKind { Clean, Report }
 
 /// <summary>One maintenance print job the printer says it can do (from its InternalPrintCap document).</summary>
-public sealed record HpJob(string JobType, string Title, HpJobKind Kind, int Level = 0);
+public sealed record HpJob(string JobType, string Title, HpJobKind Kind, int Level = 0, HpProtocol Protocol = HpProtocol.Ledm);
+
+/// <summary>Which of HP's web-service dialects a printer speaks: LEDM (XML, older and many network printers) or CDM (JSON, current models).</summary>
+public enum HpProtocol { Ledm, Cdm }
 
 public sealed class HpMaintenanceInfo
 {
     /// <summary>The printer answered the web-services requests at all.</summary>
     public bool Reachable { get; init; }
     public string? Problem { get; init; }
+    public HpProtocol Protocol { get; init; }
     public List<HpJob> Jobs { get; init; } = new();
     /// <summary>"automatic", "semiAutomatic" or "manual" when the printer supports alignment; otherwise null.</summary>
     public string? AlignmentMode { get; init; }
@@ -127,6 +131,14 @@ public static class HpMaintenance
 
     public static async Task<HpMaintenanceInfo> ProbeAsync(HttpClient http, Uri baseUri, CancellationToken ct)
     {
+        var ledm = await ProbeLedmAsync(http, baseUri, ct).ConfigureAwait(false);
+        if (ledm.Reachable) return ledm;
+        var cdm = await HpCdm.ProbeAsync(http, baseUri, ct).ConfigureAwait(false);   // current models answer in JSON instead
+        return cdm.Reachable ? cdm : ledm;
+    }
+
+    static async Task<HpMaintenanceInfo> ProbeLedmAsync(HttpClient http, Uri baseUri, CancellationToken ct)
+    {
         string? capXml = null;
         try
         {
@@ -176,6 +188,7 @@ public static class HpMaintenance
     public static async Task<string> RunJobAsync(HttpClient http, Uri baseUri, HpJob job, IProgress<string>? progress, CancellationToken ct,
         TimeSpan? maxWait = null, TimeSpan? poll = null, TimeSpan? startWindow = null)
     {
+        if (job.Protocol == HpProtocol.Cdm) return await HpCdm.RunReportAsync(http, baseUri, job, progress, ct, maxWait, poll, startWindow).ConfigureAwait(false);
         var wait = maxWait ?? TimeSpan.FromMinutes(job.Kind == HpJobKind.Clean ? 12 : 4);
         var every = poll ?? TimeSpan.FromSeconds(2);
         var window = startWindow ?? TimeSpan.FromSeconds(20);
@@ -220,8 +233,10 @@ public static class HpMaintenance
 
     /// <summary>Starts a printhead alignment. Returns what the user has to do next. Manual alignment (choosing patterns) is not supported here.</summary>
     public static async Task<string> StartAlignmentAsync(HttpClient http, Uri baseUri, string mode, IProgress<string>? progress, CancellationToken ct,
-        TimeSpan? maxWait = null, TimeSpan? poll = null)
+        TimeSpan? maxWait = null, TimeSpan? poll = null, HpProtocol protocol = HpProtocol.Ledm)
     {
+        // CDM printers print the page first (RunJobAsync with the "alignmentPage" report), then scan it: the caller drives the two steps
+        if (protocol == HpProtocol.Cdm) return await HpCdm.ScanAlignmentAsync(http, baseUri, progress, ct, maxWait, poll).ConfigureAwait(false);
         if (mode.Equals("manual", StringComparison.OrdinalIgnoreCase))
             return "This printer aligns by printing a page with numbered patterns and asking which line is best. HSA does not do that yet: use the printer web page (open it from the menu), HP Smart, or the printer's own menu.";
 
