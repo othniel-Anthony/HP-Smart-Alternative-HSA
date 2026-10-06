@@ -21,7 +21,13 @@ public static class LedmClient
         return list.Count > 0 ? list : null;
     }
 
-    /// <summary>Turns the ConsumableConfigDyn document into supply rows. Entries without a percentage (print heads, for example) are skipped.</summary>
+    // Supply types that are shown as a level. Print heads, drums and kits are not.
+    static readonly string[] InkLike = { "ink", "inkCartridge", "toner", "tonerCartridge", "rechargeableToner", "inkTank" };
+
+    /// <summary>
+    /// Turns the ConsumableConfigDyn document into supply rows, the way HP's own software reads it: cartridges and ink tanks only, nothing for a
+    /// missing one, and "unknown" (shown as a dash) when the printer gives no usable percentage.
+    /// </summary>
     public static List<SupplyLevel> ParseConsumables(string xml)
     {
         var result = new List<SupplyLevel>();
@@ -31,14 +37,18 @@ public static class LedmClient
         foreach (var info in doc.Descendants().Where(e => e.Name.LocalName == "ConsumableInfo"))
         {
             string? Get(string local) => info.Descendants().FirstOrDefault(e => e.Name.LocalName == local)?.Value.Trim();
-            if (!int.TryParse(Get("ConsumablePercentageLevelRemaining"), out var percent) || percent < 0) continue;
 
             var type = Get("ConsumableTypeEnum") ?? "";
-            if (type.Contains("head", StringComparison.OrdinalIgnoreCase) && !type.Contains("cartridge", StringComparison.OrdinalIgnoreCase)) continue; // print heads
+            if (!InkLike.Contains(type, StringComparer.OrdinalIgnoreCase)) continue;
 
-            var code = Get("ConsumableLabelCode") ?? "";
-            var (name, color) = Describe(code, Get("ConsumableStation"));
-            result.Add(new SupplyLevel(name, type.Contains("toner", StringComparison.OrdinalIgnoreCase) ? "toner" : "ink", color, Math.Clamp(percent, 0, 100), 10, 100));
+            var state = Get("ConsumableState") ?? "";
+            if (state.Equals("missing", StringComparison.OrdinalIgnoreCase)) continue;
+
+            int percent = int.TryParse(Get("ConsumablePercentageLevelRemaining"), out var p) && p >= 0 ? Math.Clamp(p, 0, 100) : -1;
+            if (percent == 0 && string.Equals(Get("MeasuredQuantityState"), "unknown", StringComparison.OrdinalIgnoreCase)) percent = -1; // 0 with no measurement means "not known"
+
+            var (name, color) = Describe(Get("ConsumableLabelCode") ?? "", Get("ConsumableStation"));
+            result.Add(new SupplyLevel(name, type.Contains("toner", StringComparison.OrdinalIgnoreCase) ? "toner" : "ink", color, percent, 10, 100));
         }
         return result;
     }

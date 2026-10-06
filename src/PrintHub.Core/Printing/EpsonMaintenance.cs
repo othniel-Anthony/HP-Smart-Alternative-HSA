@@ -269,9 +269,9 @@ public static class EpsonMaintenance
     }
 
     /// <summary>Open the printer's USB print interface for reading and writing (asynchronous), or explain why that is not possible.</summary>
-    internal static FileStream OpenUsbStream(PrinterDevice dev, out string path)
+    internal static FileStream OpenUsbStream(PrinterDevice dev, out string path, int vendor = EpsonVendor)
     {
-        path = FindPrintInterface(dev)
+        path = FindPrintInterface(dev, vendor)
             ?? throw new InvalidOperationException(dev.HasNetwork && !dev.UsbCandidates.Any() && dev.SpoolerPort?.StartsWith("USB", StringComparison.OrdinalIgnoreCase) != true
                 ? "These tools talk to the printer over its USB cable. Connect it with USB (it can stay on Wi-Fi too), or use the Maintenance tab of the Epson driver."
                 : $"HSA could not find {dev.Name} on a USB port. Check that it is switched on and plugged in.");
@@ -320,9 +320,9 @@ public static class EpsonMaintenance
     /// Which plugged-in USB print interface belongs to this printer (never its FAX function), or null when that cannot be established.
     /// Matching is strict on purpose: with two Epsons around, a wrong guess would send the command to the wrong printer.
     /// </summary>
-    public static string? FindPrintInterface(PrinterDevice dev)
+    public static string? FindPrintInterface(PrinterDevice dev, int vendor = EpsonVendor)
     {
-        var epson = PresentPrintInterfaces().Where(p => p.Vendor == EpsonVendor && !p.Name.Contains("fax", StringComparison.OrdinalIgnoreCase)).ToList();
+        var epson = PresentPrintInterfaces().Where(p => p.Vendor == vendor && !p.Name.Contains("fax", StringComparison.OrdinalIgnoreCase)).ToList();
         if (epson.Count == 0) return null;
 
         var byName = epson.Where(p => PrinterDevice.Similar(p.Name, dev.Name)).ToList();

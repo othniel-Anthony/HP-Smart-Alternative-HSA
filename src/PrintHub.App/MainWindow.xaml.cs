@@ -15,7 +15,7 @@ public sealed partial class MainWindow : Window
     readonly Dictionary<string, Type> _pages = new()
     {
         ["home"] = typeof(HomePage), ["print"] = typeof(PrintPage), ["scan"] = typeof(ScanPage), ["copy"] = typeof(CopyPage),
-        ["shortcuts"] = typeof(ShortcutsPage), ["printer"] = typeof(PrinterPage), ["web"] = typeof(WebPage), ["maintenance"] = typeof(MaintenancePage), ["settings"] = typeof(SettingsPage),
+        ["shortcuts"] = typeof(ShortcutsPage), ["printer"] = typeof(PrinterPage), ["web"] = typeof(WebPage), ["maintenance"] = typeof(MaintenancePage), ["hpmaintenance"] = typeof(HpMaintenancePage), ["canonmaintenance"] = typeof(CanonMaintenancePage), ["settings"] = typeof(SettingsPage),
     };
     bool _updatingCombo;
     DispatcherQueueTimer? _toastTimer;
@@ -98,6 +98,12 @@ public sealed partial class MainWindow : Window
         bool epson = s.Current?.IsEpson == true;
         MaintenanceItem.Visibility = epson ? Visibility.Visible : Visibility.Collapsed;
         if (!epson && ReferenceEquals(Nav.SelectedItem, MaintenanceItem)) NavigateTo("home");
+        bool hp = s.Current?.IsHp == true;
+        HpMaintenanceItem.Visibility = hp ? Visibility.Visible : Visibility.Collapsed;
+        if (!hp && ReferenceEquals(Nav.SelectedItem, HpMaintenanceItem)) NavigateTo("home");
+        bool canon = s.Current?.IsCanon == true;
+        CanonMaintenanceItem.Visibility = canon ? Visibility.Visible : Visibility.Collapsed;
+        if (!canon && ReferenceEquals(Nav.SelectedItem, CanonMaintenanceItem)) NavigateTo("home");
 
         BusyRing.IsActive = s.Discovering || s.Connecting;
         if (s.Current is null) { StateDot.Fill = new SolidColorBrush(Colors.Gray); if (s.Devices.Count > 0 || s.Discovering) StateText.Text = s.Discovering ? "Searching for printers…" : "Choose a printer"; return; }

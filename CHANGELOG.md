@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0
+- **New: Canon maintenance** (in the menu only while a Canon printer is selected; over USB). **Clean print head** (cleaning, deep cleaning, black only, colours only), **Align print head** (automatic alignment) and **Print a report** (nozzle check pattern, head alignment check page). The commands are the ones Canon's own open-source Linux maintenance tool sends. Canon printers report no status over this channel, so the page cannot tell when a job has finished: it waits about as long as the job normally takes before allowing the next one. **Not tested on a real Canon printer**: none has been available.
+- **Canon ink absorber (waste ink pad) counter reset is not included.** Canon only allows it from a service mode entered with a button sequence on the printer, and the commands are model specific and unpublished (the only open work covers one model, the G6020). The page says so.
+
+## 0.14.0
+- **New: HP maintenance** (in the menu only while an HP printer is selected; works over USB and the network). Ink levels, **Clean printhead** (levels 1 to 3), **Align printhead** and a **Print a report** menu, all taken from what the printer itself says it supports (HP's web services), as in HP Smart. Cleaning and reports wait for the printer to finish, stop with a clear message on a paper or door problem, and say so if a printer ignores a command. Alignment works on printers with automatic or semi-automatic alignment; printers that need you to pick patterns by number are pointed to the printer web page. This is built from HP's open-source printing project (HPLIP) and was tested against a simulated HP printer only: it has not yet run on a real HP printer.
+- **Ink levels for HP tank and cartridge printers** are read the way HP's own software reads them (ink tanks, missing cartridges and unknown levels handled), and the support report now includes the raw HP web-services documents.
+
 ## 0.13.2
 - **The release build includes the Epson model database again**, so the waste-ink counter reset works without choosing a file. It is the Apache-2.0 `database.json` from the EWR project; its licence text and the credits for the projects it builds on (reinkpy, ez-reset, reink, Gutenprint) are in `THIRD-PARTY-NOTICES.md` and the `licenses` folder of the zip. A file in HSA's data folder or next to `HSA.exe` still overrides it.
 

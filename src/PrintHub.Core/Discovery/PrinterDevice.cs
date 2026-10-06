@@ -27,10 +27,13 @@ public sealed class PrinterDevice
     public string? WiaDeviceId { get; set; }
 
     public bool IsHp => Manufacturer.Contains("HP", StringComparison.OrdinalIgnoreCase) || Manufacturer.Contains("Hewlett", StringComparison.OrdinalIgnoreCase)
-                        || Name.StartsWith("HP ", StringComparison.OrdinalIgnoreCase);
+                        || Name.StartsWith("HP ", StringComparison.OrdinalIgnoreCase) || UsbCandidates.Any(u => u.VendorId == 0x03F0);
     /// <summary>True for Epson printers (by maker, name, Windows driver or USB vendor id). Gates the Epson-only maintenance tools.</summary>
     public bool IsEpson => Manufacturer.Contains("epson", StringComparison.OrdinalIgnoreCase) || Name.Contains("epson", StringComparison.OrdinalIgnoreCase)
                            || (SpoolerDriver?.Contains("epson", StringComparison.OrdinalIgnoreCase) ?? false) || UsbCandidates.Any(u => u.VendorId == 0x04B8);
+    /// <summary>True for Canon printers (by maker, name or Windows driver). Gates the Canon-only maintenance tools.</summary>
+    public bool IsCanon => Manufacturer.Contains("canon", StringComparison.OrdinalIgnoreCase) || Name.Contains("canon", StringComparison.OrdinalIgnoreCase)
+                           || Name.StartsWith("PIXMA", StringComparison.OrdinalIgnoreCase) || (SpoolerDriver?.Contains("canon", StringComparison.OrdinalIgnoreCase) ?? false);
     public bool HasNetwork => IppUri is not null || EsclUri is not null;
     public bool HasUsbHttp => Usb is { Openable: true } || UsbCandidates.Any(u => u.Openable);
     public bool CanScan => EsclUri is not null || WiaDeviceId is not null || HasUsbHttp;

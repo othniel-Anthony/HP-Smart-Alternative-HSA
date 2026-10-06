@@ -44,6 +44,14 @@
         <NavigationViewItem x:Name="MaintenanceItem" Content="Epson maintenance" Tag="maintenance" Visibility="Collapsed">
           <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
         </NavigationViewItem>
+        <!-- shown only while an HP printer is selected -->
+        <NavigationViewItem x:Name="HpMaintenanceItem" Content="HP maintenance" Tag="hpmaintenance" Visibility="Collapsed">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <!-- shown only while a Canon printer is selected -->
+        <NavigationViewItem x:Name="CanonMaintenanceItem" Content="Canon maintenance" Tag="canonmaintenance" Visibility="Collapsed">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
       </NavigationView.MenuItems>
       <NavigationView.FooterMenuItems>
         <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />

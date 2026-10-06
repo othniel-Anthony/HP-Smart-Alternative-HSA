@@ -111,6 +111,10 @@ public sealed class PrinterSession : IAsyncDisposable
     /// Ink levels from HP's web services, for HP printers whose IPP answer has none (or that have no IPP at all, like many USB-only inkjets).
     /// A "not available" answer is remembered for a while so the 20-second status refresh does not keep asking.
     /// </summary>
+    /// <summary>A client for the printer's plain HTTP web services (HP maintenance, ink levels), or null when there is no address to talk to. The caller disposes it.</summary>
+    public HttpClient? CreateWebServicesClient() =>
+        HttpBase is null ? null : ViaUsb ? new HttpClient { Timeout = TimeSpan.FromSeconds(60) } : new HttpClient(Http.LocalTls.CreateHandler()) { Timeout = TimeSpan.FromSeconds(60) };
+
     public async Task<List<SupplyLevel>?> GetLedmSuppliesAsync(CancellationToken ct = default)
     {
         bool hp = Device.IsHp || Device.UsbCandidates.Any(u => u.VendorId == 0x03F0);

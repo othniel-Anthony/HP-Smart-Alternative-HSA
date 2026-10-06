@@ -99,6 +99,25 @@ public static class PrinterTools
             }
             catch (Exception ex) { sb.AppendLine().AppendLine($"eSCL query failed: {ex.Message}"); }
         }
+        if (dev.IsHp && session?.CreateWebServicesClient() is { } hpHttp && session.HttpBase is { } hpBase)
+        {
+            using (hpHttp)
+            {
+                sb.AppendLine().AppendLine($"HP web services ({(session.ViaUsb ? "USB" : "network")}, {hpBase})");
+                foreach (var doc in new[] { "DevMgmt/DiscoveryTree.xml", "DevMgmt/ConsumableConfigDyn.xml", "DevMgmt/InternalPrintCap.xml", "DevMgmt/ProductStatusDyn.xml", "Calibration/State" })
+                {
+                    try
+                    {
+                        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(15));
+                        using var r = await hpHttp.GetAsync(new Uri(hpBase, doc), cts.Token);
+                        var body = await r.Content.ReadAsStringAsync(cts.Token);
+                        sb.AppendLine($"  GET /{doc} -> {(int)r.StatusCode}");
+                        foreach (var line in (body.Length > 1800 ? body[..1800] + " ..." : body).Split('\n')) sb.AppendLine("    " + line.TrimEnd('\r'));
+                    }
+                    catch (Exception ex) { sb.AppendLine($"  GET /{doc} failed: {ex.Message}"); }
+                }
+            }
+        }
         sb.AppendLine().AppendLine($"OCR available: {OcrService.IsAvailable}");
 
         // the last few USB / scanner-driver / print-timing log lines from today, so a support request carries the evidence

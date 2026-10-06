@@ -48,3 +48,7 @@ EWR states that its database is assembled by an automated pipeline from four ups
 - Gutenprint (https://gutenprint.sourceforge.net/)
 
 The file is kept out of the source repository (it is git-ignored); release builds embed it when `src/PrintHub.Core/Resources/epson-database.json` is present at build time. A file named `epson-database.json` in HSA's data folder or next to `HSA.exe` overrides the built-in one.
+
+## Canon maintenance commands
+
+The command strings the *Canon maintenance* page sends (for example `@Cleaning=1ALL`, `@TestPrint=NozzleCheck`, `@TestPrint=Regi_Auto1`) and the way a job is wrapped (`ESC [ K 02 00 00 1F`, `BJLSTART` ... `BJLEND`, the set-time block) are taken from Canon Inc.'s open-source Canon IJ Printer Driver for Linux (maintenance tool), released under the GNU General Public License v2 ("Copyright CANON INC. 2001-2012"). HSA contains its own implementation; only the command strings and the job layout, which are facts about Canon's printer protocol, are reused.
