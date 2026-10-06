@@ -23,8 +23,16 @@ public sealed class UsbHttpProxy : IAsyncDisposable
     {
         if (!iface.Openable) throw new InvalidOperationException($"Interface is not openable: {iface.Describe()}");
         var path = iface.DevicePath!;
-        _open = () => { var s = UsbPipeStream.Open(path); s.Drain(); return s; };
-        _abort = () => (_usb as UsbPipeStream)?.Abort();
+        if (iface.Transport == UsbTransport.Usbscan)
+        {
+            _open = () => { var s = UsbscanStream.Open(path); s.Drain(); return s; };
+            _abort = () => (_usb as UsbscanStream)?.Abort();
+        }
+        else
+        {
+            _open = () => { var s = UsbPipeStream.Open(path); s.Drain(); return s; };
+            _abort = () => (_usb as UsbPipeStream)?.Abort();
+        }
     }
 
     /// <summary>Test hook: bridge to any byte stream that speaks HTTP (a fake device, a socket...).</summary>
@@ -86,6 +94,7 @@ public sealed class UsbHttpProxy : IAsyncDisposable
     {
         // Normalise: the device sees a plain Content-Length request addressed to "localhost".
         req.SetHeader("Host", "localhost");
+        SameSiteAsHost(req, "Origin"); SameSiteAsHost(req, "Referer");
         req.RemoveHeader("Proxy-Connection");
         req.RemoveHeader("Keep-Alive");
         req.RemoveHeader("Upgrade");
@@ -129,6 +138,19 @@ public sealed class UsbHttpProxy : IAsyncDisposable
             }
         }
         finally { _usbGate.Release(); }
+    }
+
+    /// <summary>
+    /// A browser that opened the page at http://127.0.0.1:PORT/ sends that address as the Origin / Referer of a form post, while the printer is told
+    /// its own name is "localhost". A printer web server may take that mismatch for a request from another site and refuse it; one M283 went on
+    /// answering 404 to everything afterwards. Addresses that point at this proxy are therefore shown to the printer as "localhost", like Host.
+    /// </summary>
+    void SameSiteAsHost(HttpMessage req, string header)
+    {
+        var value = req.GetHeader(header);
+        if (value is null || !Uri.TryCreate(value, UriKind.Absolute, out var u)) return;
+        if (!(u.Host == "127.0.0.1" || u.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) || u.Port != BaseUri.Port) return;
+        req.SetHeader(header, header == "Origin" ? "http://localhost" : "http://localhost" + u.PathAndQuery);
     }
 
     void EnsureOpen()

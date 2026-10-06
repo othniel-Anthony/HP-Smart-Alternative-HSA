@@ -13,6 +13,18 @@ public static class PrinterDiscovery
     /// <summary>Optional: receives timing lines such as "WIA scanners took 2300 ms".</summary>
     public static Action<string>? Trace { get; set; }
 
+    /// <summary>Names that describe a driver or a function of the printer rather than its model.</summary>
+    internal static bool IsGenericInterfaceName(string name) =>
+        new[] { "universal printing", "(rest)", "(mtp", "composite", "usb printing support", "scanner", "utility", "ledm", "unusedscanstub" }.Any(g => name.Contains(g, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>"HP ColorLaserJet MFP M282-M285(REST)" is the REST function of the "HP ColorLaserJet MFP M282-M285": drop the function label.</summary>
+    internal static string CleanInterfaceName(string name) =>
+        System.Text.RegularExpressions.Regex.Replace(name, @"\s*\((?:REST|IPP WinUSB|MTP NULL|MTP|USB|SOAP Fax|LEDM)\)\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+    /// <summary>The Windows queue of a printer's fax function ("Fax - HP ColorLaserJet MFP M282-M285").</summary>
+    internal static bool IsFaxQueue(string name) =>
+        System.Text.RegularExpressions.Regex.IsMatch(name, @"^fax\b|\bfax\)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     static T Timed<T>(string what, Func<T> f)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -75,6 +87,7 @@ public static class PrinterDiscovery
         foreach (var q in local.Spooler)
         {
             if (q.Name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("PORTPROMPT")) continue; // Print to PDF / XPS
+            if (IsFaxQueue(q.Name)) continue;   // an MFP's fax function has its own Windows queue ("Fax - HP ...") that must not stand in for its print queue
             if (q.Name.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase) || q.Name.Contains("Fax", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("SHRFAX")) continue;
             var ip = SpoolerPrinters.AddressFromPort(q.Port);
             var existing = devices.FirstOrDefault(d => (ip is not null && d.Address == ip) || PrinterDevice.Similar(d.Name, q.Name) || PrinterDevice.Similar(d.Name, q.Driver));
@@ -86,12 +99,15 @@ public static class PrinterDiscovery
         foreach (var grp in local.Usb.GroupBy(u => (u.VendorId, u.ProductId, u.ContainerId)))
         {
             var first = grp.OrderByDescending(u => u.Openable).First();
+            // an interface can carry a driver's label ("HP Smart Universal Printing(REST)") instead of the printer's model: prefer one that names the model
+            var named = grp.OrderByDescending(u => u.Openable).FirstOrDefault(u => !IsGenericInterfaceName(CleanInterfaceName(u.Name))) ?? first;
+            var modelName = CleanInterfaceName(named.Name);
             var rec = new PrinterDevice
             {
-                Name = first.Name, Manufacturer = first.VendorId == 0x03F0 ? "HP" : "", Model = first.Name,
+                Name = modelName, Manufacturer = first.VendorId == 0x03F0 ? "HP" : "", Model = modelName,
                 Usb = grp.FirstOrDefault(u => u.Openable), UsbCandidates = grp.ToList(),
             };
-            var existing = devices.FirstOrDefault(d => PrinterDevice.Similar(d.Name, first.Name) || PrinterDevice.Similar(d.Model, first.Name));
+            var existing = devices.FirstOrDefault(d => PrinterDevice.Similar(d.Name, modelName) || PrinterDevice.Similar(d.Model, modelName));
             if (existing is not null) existing.Merge(rec); else devices.Add(rec);
         }
 

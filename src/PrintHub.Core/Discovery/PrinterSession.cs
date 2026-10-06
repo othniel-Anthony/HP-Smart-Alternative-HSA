@@ -47,6 +47,8 @@ public sealed class PrinterSession : IAsyncDisposable
     {
         var candidates = Device.UsbCandidates.Where(u => u.Openable).ToList();
         if (Device.Usb is { Openable: true } u0 && !candidates.Contains(u0)) candidates.Insert(0, u0);
+        // interfaces bound to WinUSB first (the most direct way in), then the ones driven by Windows' scanner driver
+        candidates = candidates.OrderBy(u => u.Transport == UsbTransport.WinUsb ? 0 : 1).ToList();
         if (candidates.Count == 0) { Error = "No USB web-services interface is bound to WinUSB."; return; }
 
         foreach (var iface in candidates)

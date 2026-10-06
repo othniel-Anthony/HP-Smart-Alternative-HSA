@@ -61,6 +61,9 @@ public static partial class UsbDeviceScanner
                 string? path = null;
                 if (present && service.Equals("WINUSB", StringComparison.OrdinalIgnoreCase))
                     path = FindInterfacePath(k, instanceId);
+                // The web-services interface of many HP printers is driven by Windows' scanner driver instead; it exposes its own device file.
+                else if (present && kind != UsbHttpKind.None && service.Equals("usbscan", StringComparison.OrdinalIgnoreCase))
+                    path = FindImagePath(instanceId);
 
                 result.Add(new UsbInterfaceInfo(instanceId, vid, pid, mi, desc, service, cls, sub, prot, kind, present, path, container));
             }
@@ -71,6 +74,15 @@ public static partial class UsbDeviceScanner
     /// <summary>Interfaces that should expose an embedded web server over USB.</summary>
     public static IReadOnlyList<UsbInterfaceInfo> FindHttpInterfaces(bool presentOnly = true) =>
         Scan(presentOnly).Where(i => i.HttpKind != UsbHttpKind.None).ToList();
+
+    static string? FindImagePath(string instanceId)
+    {
+        var guid = UsbscanStream.ImageInterface;
+        if (NativeMethods.CM_Get_Device_Interface_List_SizeW(out var len, ref guid, instanceId, 0) != 0 || len <= 1) return null;
+        var buf = new char[len];
+        if (NativeMethods.CM_Get_Device_Interface_ListW(ref guid, instanceId, buf, len, 0) != 0) return null;
+        return new string(buf).Split('\0', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+    }
 
     static string? FindInterfacePath(RegistryKey instanceKey, string instanceId)
     {

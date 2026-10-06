@@ -71,7 +71,16 @@ public sealed class PrinterDevice
 
     public static HashSet<string> Tokens(string s) =>
         Regex.Split(s.ToLowerInvariant(), "[^a-z0-9]+").Where(t => t.Length > 0 && !Stop.Contains(t))
+            .SelectMany(SplitJoinedModels)
             .Select(t => Aliases.TryGetValue(t, out var full) ? full : t).ToHashSet();
+
+    /// <summary>"m282m285" (two model numbers written together, as in "HP LJ M282M285") also counts as "m282" and "m285".</summary>
+    static IEnumerable<string> SplitJoinedModels(string t)
+    {
+        yield return t;
+        var parts = Regex.Matches(t, "[a-z]+[0-9]+");
+        if (parts.Count >= 2 && string.Concat(parts.Select(m => m.Value)) == t) foreach (Match m in parts) yield return m.Value;
+    }
 
     public static bool Similar(string a, string b)
     {

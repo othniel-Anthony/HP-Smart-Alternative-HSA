@@ -1,5 +1,16 @@
 namespace PrintHub.Core.Usb;
 
+/// <summary>How HSA gets at an interface without changing the driver Windows chose for it.</summary>
+public enum UsbTransport
+{
+    /// <summary>Not reachable: the interface is not present, or Windows gave it to a driver HSA cannot talk through.</summary>
+    None,
+    /// <summary>The interface is bound to WinUSB: bulk pipes are used directly.</summary>
+    WinUsb,
+    /// <summary>The interface is bound to Windows' scanner driver (usbscan), which exposes it as a device file (HP's scan software does this).</summary>
+    Usbscan,
+}
+
 public enum UsbHttpKind
 {
     None,
@@ -22,9 +33,13 @@ public sealed record UsbInterfaceInfo(
     string? DevicePath,
     string? ContainerId)
 {
-    /// <summary>True when the interface is present and bound to WinUSB, so it can be opened without changing drivers.</summary>
-    public bool Openable => Present && DevicePath is not null && Service.Equals("WINUSB", StringComparison.OrdinalIgnoreCase);
+    public UsbTransport Transport =>
+        Service.Equals("WINUSB", StringComparison.OrdinalIgnoreCase) ? UsbTransport.WinUsb :
+        Service.Equals("usbscan", StringComparison.OrdinalIgnoreCase) ? UsbTransport.Usbscan : UsbTransport.None;
+
+    /// <summary>True when the interface is present and bound to WinUSB or to the scanner driver, so it can be opened without changing drivers.</summary>
+    public bool Openable => Present && DevicePath is not null && Transport != UsbTransport.None;
 
     public string Describe() =>
-        $"{VendorId:X4}:{ProductId:X4} MI_{InterfaceNumber:00} {Name} [{Class:X2}/{SubClass:X2}/{Protocol:X2}] svc={Service} {HttpKind} present={Present} openable={Openable}";
+        $"{VendorId:X4}:{ProductId:X4} MI_{InterfaceNumber:00} {Name} [{Class:X2}/{SubClass:X2}/{Protocol:X2}] svc={Service} via={Transport} {HttpKind} present={Present} openable={Openable}";
 }
