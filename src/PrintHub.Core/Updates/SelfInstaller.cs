@@ -75,10 +75,16 @@ public static class SelfInstaller
         if (removeData && dataDir is not null) try { Directory.Delete(dataDir, true); } catch { }
 
         if (deleteFolderNow) { try { Directory.Delete(loc.InstallDir, true); } catch { } return; }
-        // the running exe lives in the folder: remove it a moment after this process has ended
-        var cmd = new ProcessStartInfo("cmd.exe", $"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{loc.InstallDir}\"") { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
+        // The running exe lives in the folder, and stays open while its "was removed" message is on screen (as long as the user takes to click OK),
+        // so the folder cannot be deleted yet. A detached command tries again every second, for up to ten minutes, until it is gone.
+        var cmd = new ProcessStartInfo("cmd.exe", RemoveFolderCommand(loc.InstallDir)) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
         try { Process.Start(cmd); } catch { }
     }
+
+    /// <summary>The arguments for cmd.exe that remove <paramref name="dir"/>, retrying while something (the uninstaller itself) still holds a file in it.</summary>
+    internal static string RemoveFolderCommand(string dir) =>
+        // (in cmd, "if x y & z" runs z only when x is true, so the wait sits inside the branch that tries again)
+        $"/c for /l %i in (1,1,600) do (if exist \"{dir}\" (rmdir /s /q \"{dir}\" 2>nul & ping -n 2 127.0.0.1 >nul) else (exit /b 0))";
 
     static void CreateShortcut(string lnkPath, string target, string workingDir)
     {

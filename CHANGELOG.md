@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.2
+- **Uninstall fix.** Removing HSA from *Apps & features* could leave its install folder (with `HSA.exe`) behind: the shortcut and the Apps & features entry were removed, but the folder was deleted only once, about three seconds in, while HSA was still open showing its "was removed" message and the exe was locked. If you took longer than that to click OK, the folder stayed. The clean-up now keeps retrying, once a second, until the folder is gone. A copy installed by 0.16.0 or 0.16.1 gets the fix when it updates to this version.
+- Tested: a unit test that locks a file in the folder for longer than the old wait and then releases it, and a run of the uninstaller on a real single-file exe.
+
 ## 0.16.1
 - **HSA picks the printer that is plugged in by USB and online, by itself.** Until you choose a printer by hand, the printer connected by USB at that moment is selected when HSA starts, instead of the remembered printer or the Windows default. "Plugged in" is checked against the USB bus, not the Windows printer list (Windows keeps a queue for every USB printer you ever installed and still shows it as normal when it is unplugged), and a queue set to "use printer offline" does not count. With several USB printers connected, the remembered one wins, then the Windows default. Once you pick a printer yourself, a search never takes the choice away; only a printer plugged in since the last search is switched to, with a notice.
 - Tested on a real Epson L3250 on USB with seven unplugged USB queues installed (including the Windows default) and with a different network printer remembered: the USB printer was selected in both cases. Not yet tried with two USB printers plugged in at once.
