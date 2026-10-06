@@ -1,8 +1,11 @@
 # Changelog
 
+## 0.16.4
+- **The "update is ready" step no longer waits behind thousands of progress reports.** The update download used to report progress after every 64 KB, about 2,600 times for the 163 MB file, and each report queued work on the window's thread. When that thread was busy (in testing, a tool that constantly queries the window; an accessibility tool could do the same), the "download finished" step queued up behind all of them: the file was downloaded in about 8 seconds but HSA took over 160 seconds to say so. Progress is now reported once per whole percent. Checked on the real exe against the real GitHub release with the window being polled the whole time: about 9 seconds, against over 160 seconds before.
+
 ## 0.16.3
-- **A stalled update download no longer hangs.** In a real test one update download received no data for well over a minute while another copy fetched the same file in 12 seconds, and HSA kept showing "Downloading…" because nothing noticed. A download that receives nothing for 30 seconds is now given up and tried again automatically (up to three attempts) before the bar offers "Try again", and no half-finished file is kept.
-- Tested with a server that sends half the file and then goes silent. The cause of the original stall (GitHub, the network or something else) is not known.
+- **A download that stops receiving data is given up and tried again.** If an update download receives nothing for 30 seconds it is abandoned (no half-finished file is kept) and tried again automatically, up to three attempts, before the bar offers "Try again". Tested with a server that sends half the file and goes silent. This is a safety net; it has not been seen to matter in real use.
+- Correction: this release was prompted by a download that seemed to hang for over a minute in automated tests, which these notes first called a stall. It was not: the download took about 8 seconds, and the delay was the app finishing the step slowly while a test tool queried its window (see the entry above).
 
 ## 0.16.2
 - **Uninstall fix.** Removing HSA from *Apps & features* could leave its install folder (with `HSA.exe`) behind: the shortcut and the Apps & features entry were removed, but the folder was deleted only once, about three seconds in, while HSA was still open showing its "was removed" message and the exe was locked. If you took longer than that to click OK, the folder stayed. The clean-up now keeps retrying, once a second, until the folder is gone. A copy installed by 0.16.0 or 0.16.1 gets the fix when it updates to this version.

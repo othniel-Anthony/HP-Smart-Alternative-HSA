@@ -156,12 +156,15 @@ public static class UpdateService
                 resp.EnsureSuccessStatusCode();
                 await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                 await using var dst = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
-                var buf = new byte[1 << 16]; long done = 0; int n;
+                var buf = new byte[1 << 16]; long done = 0; int n, lastPct = -1;
                 while ((n = await WithinStallTimeout(ct, async t => await src.ReadAsync(buf, t).ConfigureAwait(false)).ConfigureAwait(false)) > 0)
                 {
                     await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
                     done += n; if (done > info.ExeSize) throw new InvalidDataException("The download is larger than the release says, so it was discarded.");
-                    progress?.Report((double)done / info.ExeSize);
+                    // one report per whole percent (not per 64 KB chunk): thousands of reports queue up on the UI thread and, when it is busy,
+                    // delay the "download finished" step behind all of them
+                    int pct = (int)(done * 100 / info.ExeSize);
+                    if (pct != lastPct) { lastPct = pct; progress?.Report((double)done / info.ExeSize); }
                 }
                 if (done != info.ExeSize) throw new InvalidDataException("The download is incomplete, so it was discarded.");
             }
