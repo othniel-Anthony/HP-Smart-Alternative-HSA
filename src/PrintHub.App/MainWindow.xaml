@@ -63,8 +63,23 @@
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <StackPanel Grid.Row="0">
+        <!-- a newer version of HSA was found on GitHub -->
+        <InfoBar x:Name="UpdateBar" IsOpen="False" IsClosable="False" Severity="Informational" AutomationProperties.Name="Update available">
+          <InfoBar.ActionButton><Button x:Name="UpdateActionButton" Click="UpdateAction_Click" /></InfoBar.ActionButton>
+          <InfoBar.Content>
+            <StackPanel Spacing="6" Margin="0,0,0,8">
+              <ProgressBar x:Name="UpdateProgress" Minimum="0" Maximum="1" Visibility="Collapsed" MaxWidth="420" HorizontalAlignment="Left" />
+              <StackPanel Orientation="Horizontal" Spacing="16">
+                <HyperlinkButton x:Name="UpdateNotesLink" Content="What's new" Click="UpdateNotes_Click" Padding="0" />
+                <HyperlinkButton x:Name="UpdateSkipLink" Content="Skip this version" Click="UpdateSkip_Click" Padding="0" />
+                <HyperlinkButton x:Name="UpdateLaterLink" Content="Later" Click="UpdateLater_Click" Padding="0" />
+              </StackPanel>
+            </StackPanel>
+          </InfoBar.Content>
+        </InfoBar>
         <!-- persistent printer bar -->
-        <Border Grid.Row="0" Padding="24,12,24,12" BorderThickness="0,0,0,1" BorderBrush="{StaticResource PastelLineBrush}">
+        <Border Padding="24,12,24,12" BorderThickness="0,0,0,1" BorderBrush="{StaticResource PastelLineBrush}">
           <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
@@ -89,6 +104,7 @@
             </Button>
           </Grid>
         </Border>
+        </StackPanel>
 
         <Frame x:Name="ContentFrame" Grid.Row="1" />
 

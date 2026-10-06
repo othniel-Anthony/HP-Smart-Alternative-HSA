@@ -7,6 +7,8 @@ using Microsoft.UI.Xaml.Media;
 using PrintHub.App.Pages;
 using PrintHub.App.Services;
 using PrintHub.Core.Discovery;
+using PrintHub.Core.Updates;
+using Microsoft.UI.Xaml.Automation;
 
 namespace PrintHub.App;
 
@@ -35,9 +37,113 @@ public sealed partial class MainWindow : Window
         App.State.CurrentChanged += () => DispatcherQueue.TryEnqueue(UpdateHeader);
         App.State.StatusChanged += () => DispatcherQueue.TryEnqueue(UpdateHeader);
 
-        Root.Loaded += (_, _) => StartupTrace.Mark("Window content loaded (first frame)");
+        App.Updates.Changed += () => DispatcherQueue.TryEnqueue(RefreshUpdateBar);
+        Root.Loaded += (_, _) => { StartupTrace.Mark("Window content loaded (first frame)"); _ = LaunchTasksAsync(); };
         Nav.SelectedItem = Nav.MenuItems[0];
     }
+
+    // ------------------------------------------------------------------ installing and updating
+
+    /// <summary>A few seconds after the window opens (so start-up is not slowed): report a failed update, offer to install HSA, look for a newer version.</summary>
+    async Task LaunchTasksAsync()
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4));
+            if (File.Exists(UpdateApplier.ErrorFile))
+            {
+                var why = File.ReadAllText(UpdateApplier.ErrorFile); try { File.Delete(UpdateApplier.ErrorFile); } catch { }
+                Toast(why, InfoBarSeverity.Error, 15);
+            }
+            if (!UpdateManager.Available) return;
+            if (await OfferInstallAsync()) return;
+            await App.Updates.CheckOnLaunchAsync();
+        }
+        catch (Exception ex) { AppLog.Write("Start-up tasks: " + ex); }
+    }
+
+    /// <summary>Returns true when HSA installed itself and is restarting from the install folder.</summary>
+    async Task<bool> OfferInstallAsync()
+    {
+        for (int i = 0; i < 50 && !App.State.SettingsLoaded; i++) await Task.Delay(200);
+        var loc = InstallLocations.Default;
+        if (App.State.Settings.InstallPromptDismissed || SelfInstaller.IsRunningFromInstall(loc, Environment.ProcessPath)) return false;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot, Title = "Install HP Smart Alternative?", DefaultButton = ContentDialogButton.Primary,
+            Content = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxWidth = 460, Text =
+                "Installing adds HSA to the Start menu and to Apps & features, and lets it check for new versions and update itself. It needs no administrator rights, and your scans and settings are not touched." },
+            PrimaryButtonText = "Install", CloseButtonText = "Not now", SecondaryButtonText = "Don't ask again",
+        };
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Secondary) { App.State.Settings.InstallPromptDismissed = true; App.State.SaveSettings(); return false; }
+        if (result != ContentDialogResult.Primary) return false;
+        return await InstallNowAsync();
+    }
+
+    public async Task<bool> InstallNowAsync()
+    {
+        try
+        {
+            var exe = await Task.Run(() => SelfInstaller.Install(InstallLocations.Default, Environment.ProcessPath!, AppState.Version));
+            App.State.SaveSettings();
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
+            Application.Current.Exit();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write("Install failed: " + ex);
+            await Ui.MessageAsync(Root.XamlRoot, "HSA could not be installed", ex.Message.Contains("being used", StringComparison.OrdinalIgnoreCase)
+                ? "HSA is already running from the install folder. Close that copy first, then try again."
+                : ex.Message);
+            return false;
+        }
+    }
+
+    void RefreshUpdateBar()
+    {
+        var u = App.Updates; var v = u.Info?.Version.ToString(3);
+        bool show = u.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Ready or UpdateState.Failed;
+        UpdateBar.IsOpen = show;
+        if (!show) return;
+
+        UpdateBar.Severity = u.State == UpdateState.Failed ? InfoBarSeverity.Warning : u.State == UpdateState.Ready ? InfoBarSeverity.Success : InfoBarSeverity.Informational;
+        UpdateProgress.Visibility = u.State == UpdateState.Downloading ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgress.Value = u.Progress;
+        UpdateActionButton.Visibility = u.State == UpdateState.Downloading ? Visibility.Collapsed : Visibility.Visible;
+        UpdateSkipLink.Visibility = UpdateLaterLink.Visibility = u.State == UpdateState.Downloading ? Visibility.Collapsed : Visibility.Visible;
+        switch (u.State)
+        {
+            case UpdateState.Available:
+                UpdateBar.Title = $"HSA {v} is available"; UpdateBar.Message = $"You have {AppState.Version}.";
+                UpdateActionButton.Content = u.CanReplaceThisInstall ? "Download and install" : "Open the download page"; break;
+            case UpdateState.Downloading:
+                UpdateBar.Title = $"Downloading HSA {v}…"; UpdateBar.Message = $"{u.Progress:P0}"; break;
+            case UpdateState.Ready:
+                UpdateBar.Title = $"HSA {v} is ready"; UpdateBar.Message = "HSA closes and opens again in the new version. Your settings are kept.";
+                UpdateActionButton.Content = "Restart and update"; break;
+            case UpdateState.Failed:
+                UpdateBar.Title = "The update did not download"; UpdateBar.Message = u.Message; UpdateActionButton.Content = "Try again"; break;
+        }
+        AutomationProperties.SetName(UpdateActionButton, (string)UpdateActionButton.Content);
+    }
+
+    async void UpdateAction_Click(object sender, RoutedEventArgs e)
+    {
+        var u = App.Updates;
+        switch (u.State)
+        {
+            case UpdateState.Available when !u.CanReplaceThisInstall: u.OpenReleasePage(); break;
+            case UpdateState.Available or UpdateState.Failed: await u.DownloadAsync(); break;
+            case UpdateState.Ready: if (!u.RestartAndUpdate()) Toast("HSA is in a folder it cannot change, so the download page was opened instead.", InfoBarSeverity.Warning); break;
+        }
+    }
+
+    void UpdateNotes_Click(object sender, RoutedEventArgs e) => App.Updates.OpenReleasePage();
+    void UpdateSkip_Click(object sender, RoutedEventArgs e) => App.Updates.SkipThisVersion();
+    void UpdateLater_Click(object sender, RoutedEventArgs e) => App.Updates.Dismiss();
 
     public void NavigateTo(string tag)
     {

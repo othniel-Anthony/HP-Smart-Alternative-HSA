@@ -86,6 +86,14 @@ public sealed class AppSettings
     public bool OpenFolderAfterSave { get; set; }
     public bool SearchablePdf { get; set; } = true;
     public string Theme { get; set; } = "System";
+    /// <summary>Look for a newer release on GitHub shortly after start-up.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>Download a newer release in the background (installing it still asks for a restart).</summary>
+    public bool AutoDownloadUpdates { get; set; } = true;
+    public string? SkippedVersion { get; set; }
+    public DateTime? LastUpdateCheck { get; set; }
+    /// <summary>The user chose "Don't ask again" on the offer to install HSA.</summary>
+    public bool InstallPromptDismissed { get; set; }
     public List<SavedPrinter> Printers { get; set; } = new();
     public List<ShortcutDef> Shortcuts { get; set; } = ShortcutDef.Defaults();
 

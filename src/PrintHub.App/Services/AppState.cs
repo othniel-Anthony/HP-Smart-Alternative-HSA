@@ -13,6 +13,7 @@ public sealed class AppState
     int _statusGeneration;
 
     public AppSettings Settings { get; private set; } = new();
+    public bool SettingsLoaded { get; private set; }
     public List<PrinterDevice> Devices { get; private set; } = new();
     public PrinterDevice? Current { get; private set; }
     public PrinterSession? Session { get; private set; }
@@ -31,6 +32,7 @@ public sealed class AppState
     public async Task InitializeAsync()
     {
         Settings = await Task.Run(SettingsStore.Load);
+        SettingsLoaded = true;
         StartupTrace.Mark("Settings loaded");
         // show remembered printers immediately, then discover
         Devices = Settings.Printers.Select(p => p.ToDevice()).ToList();

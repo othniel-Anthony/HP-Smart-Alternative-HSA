@@ -4,6 +4,7 @@ using PrintHub.App.Services;
 using PrintHub.Core.Imaging;
 using PrintHub.Core.Printing;
 using PrintHub.Core.Settings;
+using PrintHub.Core.Updates;
 using PrintHub.Core.Usb;
 
 namespace PrintHub.App.Pages;
@@ -33,6 +34,42 @@ public sealed partial class SettingsPage : Page
         AboutText.Text = $"HP Smart Alternative (HSA) {AppState.Version}\nAn alternative to HP Smart for Windows. Works with any printer that supports IPP / eSCL or has a Windows driver, over network and USB.\nSettings: {SettingsStore.FilePath}";
         BuildSaved();
         RescanUsb();
+
+        _loading = true;
+        UpdateCheckSwitch.IsOn = S.CheckForUpdates; UpdateAutoSwitch.IsOn = S.AutoDownloadUpdates;
+        _loading = false;
+        App.Updates.Changed += OnUpdateChanged;
+        ShowUpdateStatus();
+    }
+
+    void Page_Unloaded(object sender, RoutedEventArgs e) => App.Updates.Changed -= OnUpdateChanged;
+    void OnUpdateChanged() => DispatcherQueue.TryEnqueue(ShowUpdateStatus);
+
+    void ShowUpdateStatus()
+    {
+        bool can = UpdateManager.Available;
+        UpdateCheckButton.IsEnabled = can && App.Updates.State is not (UpdateState.Checking or UpdateState.Downloading);
+        UpdateStatus.Text = !can ? "Updates are switched off while HSA runs from a development or test folder."
+            : App.Updates.Message.Length > 0 ? App.Updates.Message : $"HSA {AppState.Version}. Last checked: {(S.LastUpdateCheck is { } t ? t.ToLocalTime().ToString("g") : "never")}.";
+
+        var loc = InstallLocations.Default; var here = Environment.ProcessPath;
+        bool fromInstall = SelfInstaller.IsRunningFromInstall(loc, here), installed = SelfInstaller.IsInstalled(loc);
+        InstallStatus.Text = fromInstall ? $"HSA is installed ({loc.InstallDir}). New versions replace it in place."
+            : installed ? $"HSA is installed at {loc.InstallDir}. This window is running from {here}."
+            : $"HSA is not installed: it is running from {here}.";
+        InstallButton.Visibility = fromInstall ? Visibility.Collapsed : Visibility.Visible;
+        InstallButton.Content = installed ? "Reinstall HSA from this copy" : "Install HSA on this computer";
+        InstallButton.IsEnabled = can;
+    }
+
+    void UpdateCheck_Toggled(object sender, RoutedEventArgs e) { if (_loading) return; S.CheckForUpdates = UpdateCheckSwitch.IsOn; Save(); }
+    void UpdateAuto_Toggled(object sender, RoutedEventArgs e) { if (_loading) return; S.AutoDownloadUpdates = UpdateAutoSwitch.IsOn; Save(); }
+    async void UpdateCheckNow_Click(object sender, RoutedEventArgs e) => await App.Updates.CheckAsync(manual: true);
+
+    async void Install_Click(object sender, RoutedEventArgs e)
+    {
+        if (await Ui.ConfirmAsync(XamlRoot, "Install HSA?", "HSA copies itself to your user folder, adds a Start menu shortcut and an Apps & features entry, then restarts from there. Your scans and settings are not touched.", "Install"))
+            await App.Window.InstallNowAsync();
     }
 
     void Save() { if (!_loading) App.State.SaveSettings(); }

@@ -90,5 +90,9 @@ Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
 Remove-Item $stage -Recurse -Force
 Remove-Item dist/publish -Recurse -Force
 
+# SHA256SUMS.txt must be uploaded with the release: the in-app updater refuses an update it cannot check against it.
+$sums = foreach ($f in $exe, $zip) { "{0} *{1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant(), (Split-Path $f -Leaf) }
+Set-Content -Path dist/SHA256SUMS.txt -Value $sums -Encoding ascii
+
 "{0}  ({1:N0} MB){2}" -f $exe, ((Get-Item $exe).Length / 1MB), $(if ($signed) { '  [signed]' } else { '' })
 "{0}  ({1:N0} MB)" -f $zip, ((Get-Item $zip).Length / 1MB)

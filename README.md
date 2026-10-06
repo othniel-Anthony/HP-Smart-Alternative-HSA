@@ -5,7 +5,7 @@
 
 HSA is a Windows app for the everyday things you do with a printer: print, scan, copy, check the ink, and open the printer's own settings page. It does what HP Smart does for those jobs, but it doesn't need an HP account, and it isn't limited to HP printers. It talks to the printer directly, so most printers made in the last decade or so work, and so does anything that has a normal Windows driver.
 
-It's a single `.exe`. There's nothing to install unless you want a Start menu entry.
+It's a single `.exe`. Run it as it is, or let it install itself (Start menu entry, *Apps & features*, automatic updates).
 
 ![The home screen](docs/screenshots/home-dark.png)
 
@@ -19,7 +19,8 @@ Grab `HSA-<version>-win-x64.exe` from the [latest release](https://github.com/ot
 - **The first start takes a few seconds** while the app unpacks itself. After that it opens quickly.
 - **Windows will probably stop you the first time.** You will see a *Windows protected your PC* box (or an "are you sure you want to run this?" prompt) saying the publisher is unknown. The exe isn't code-signed yet, because that takes a paid certificate or approval for a free open-source one. Click *More info*, then *Run anyway*. To stop it asking, right-click the exe, choose *Properties* and tick **Unblock**, or install with the script described below. Each release lists a SHA-256 checksum so you can check the download. [More about this](docs/code-signing.md).
 - **Windows Firewall may ask about network access** the first time. Allow it on private networks; that's how the app finds printers on your Wi-Fi.
-- If you'd rather have a Start menu shortcut and an entry in *Apps & features*, the `.zip` in the release has a small per-user installer script (`Install-HSA.ps1`). It doesn't need admin rights, and it clears Windows' "downloaded from the internet" mark on the installed copy so the app opens without that box.
+- **Installing and updating.** The first time you start a copy that isn't installed, HSA offers to install itself (also in *Settings > Updates and installation*): it copies itself to `%LOCALAPPDATA%\Programs\HP Smart Alternative`, adds a Start menu shortcut and an *Apps & features* entry, and needs no administrator rights. A few seconds after it starts, HSA looks for a newer release on GitHub (at most twice a day; you can switch this off) and offers to download it and restart into it. The download is checked against the SHA-256 published with the release and refused if it doesn't match. Updating works from version 0.16.0 on.
+- If you'd rather have a Start menu shortcut and an entry in *Apps & features* without running HSA first, the `.zip` in the release has a small per-user installer script (`Install-HSA.ps1`). It doesn't need admin rights, and it clears Windows' "downloaded from the internet" mark on the installed copy so the app opens without that box.
 
 ## What you can do
 
