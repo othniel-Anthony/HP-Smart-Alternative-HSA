@@ -33,22 +33,34 @@ public sealed class UpdateManager
 
     public bool CanReplaceThisInstall => UpdateApplier.CanReplace(Environment.ProcessPath);
 
-    /// <summary>Called a few seconds after the window opens.</summary>
+    /// <summary>Delays before each further attempt when a check at start-up fails (no network yet right after logging in, GitHub busy).</summary>
+    internal static readonly TimeSpan[] RetryDelays = { TimeSpan.Zero, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10) };
+
+    /// <summary>
+    /// Called a few seconds after the window opens: checks on every start. If the check cannot be made, it is tried again a little later
+    /// (30 seconds, 2 minutes, 10 minutes) instead of waiting for the next start.
+    /// </summary>
     public async Task CheckOnLaunchAsync()
     {
         if (!Available) return;
         for (int i = 0; i < 50 && !App.State.SettingsLoaded; i++) await Task.Delay(200);
-        var s = App.State.Settings;
-        if (!s.CheckForUpdates) return;
-        // twice a day is plenty; a deliberately overridden address (testing) is always asked
-        if (s.LastUpdateCheck is { } last && DateTime.UtcNow - last < TimeSpan.FromHours(12) && Environment.GetEnvironmentVariable(UpdateService.OverrideEnvVar) is not { Length: > 0 }) return;
-        await CheckAsync(manual: false);
+        if (!App.State.Settings.CheckForUpdates) return;
+
+        foreach (var delay in RetryDelays)
+        {
+            if (delay > TimeSpan.Zero) await Task.Delay(delay);
+            if (State is UpdateState.Downloading or UpdateState.Ready) return;   // already has an update in hand
+            if (await CheckAsync(manual: false)) return;
+        }
+        AppLog.Write("Update check: gave up for this start (no answer from GitHub)");
     }
 
-    public async Task CheckAsync(bool manual)
+    /// <summary>Returns true when GitHub answered (whether or not there is a newer version) and false when the check could not be made.</summary>
+    public async Task<bool> CheckAsync(bool manual)
     {
-        if (_busy) return;
+        if (_busy) return true;
         _busy = true; Set(UpdateState.Checking, "Checking for updates…");
+        AppLog.Write($"Update check ({(manual ? "asked for" : "at start-up")}): HSA {AppState.Version}");
         try
         {
             using var http = UpdateService.CreateClient(AppState.Version);
@@ -56,9 +68,9 @@ public sealed class UpdateManager
             var info = await UpdateService.CheckAsync(http, Current, cts.Token);
             App.State.Settings.LastUpdateCheck = DateTime.UtcNow; App.State.SaveSettings();
 
-            if (info is null) { Info = null; Set(UpdateState.Idle, $"HSA {AppState.Version} is the latest version."); return; }
+            if (info is null) { Info = null; AppLog.Write("Update check: this is the latest version"); Set(UpdateState.Idle, $"HSA {AppState.Version} is the latest version."); return true; }
             Info = info;
-            if (!manual && info.Version.ToString(3) == App.State.Settings.SkippedVersion) { Set(UpdateState.Idle, $"Version {info.Version.ToString(3)} is available (skipped)."); return; }
+            if (!manual && info.Version.ToString(3) == App.State.Settings.SkippedVersion) { AppLog.Write($"Update check: {info.Tag} is available but was skipped"); Set(UpdateState.Idle, $"Version {info.Version.ToString(3)} is available (skipped)."); return true; }
             Set(UpdateState.Available, $"Version {info.Version.ToString(3)} is available.");
             AppLog.Write($"Update available: {info.Tag}");
         }
@@ -66,11 +78,12 @@ public sealed class UpdateManager
         {
             AppLog.Write("Update check failed: " + ex.Message);
             Set(UpdateState.Idle, manual ? "Could not check for updates: " + ex.Message : Message);   // a failed background check stays quiet
-            return;
+            return false;
         }
         finally { _busy = false; }
 
         if (State == UpdateState.Available && App.State.Settings.AutoDownloadUpdates && CanReplaceThisInstall) await DownloadAsync();
+        return true;
     }
 
     public async Task DownloadAsync()

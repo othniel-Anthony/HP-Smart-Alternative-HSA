@@ -40,6 +40,9 @@ public partial class App : Application
         Window = new MainWindow();
         StartupTrace.Mark("MainWindow created");
         Window.Activate();
+        // closing HSA during an Epson clean must not leave the printer waiting in remote-command mode
+        Window.Closed += (_, _) => Core.Printing.EpsonMaintenance.ReleaseAll();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Core.Printing.EpsonMaintenance.ReleaseAll();
         StartupTrace.Mark("Window activated");
         Core.Discovery.PrinterDiscovery.Trace = s => StartupTrace.Mark("  discovery: " + s);
         _ = State.InitializeAsync();

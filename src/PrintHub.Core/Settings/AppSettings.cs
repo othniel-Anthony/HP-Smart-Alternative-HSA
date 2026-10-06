@@ -86,6 +86,8 @@ public sealed class AppSettings
     public bool OpenFolderAfterSave { get; set; }
     public bool SearchablePdf { get; set; } = true;
     public string Theme { get; set; } = "System";
+    /// <summary>How many copies of the colour test page the Home screen prints (it asks, and remembers the last number).</summary>
+    public int TestPageCopies { get; set; } = 1;
     /// <summary>Look for a newer release on GitHub shortly after start-up.</summary>
     public bool CheckForUpdates { get; set; } = true;
     /// <summary>Download a newer release in the background (installing it still asks for a restart).</summary>

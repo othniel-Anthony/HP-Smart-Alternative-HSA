@@ -56,8 +56,10 @@ public sealed partial class MainWindow : Window
                 Toast(why, InfoBarSeverity.Error, 15);
             }
             if (!UpdateManager.Available) return;
+            // the check does not wait for the install offer to be answered (that dialog can sit open for as long as it likes)
+            var check = App.Updates.CheckOnLaunchAsync();
             if (await OfferInstallAsync()) return;
-            await App.Updates.CheckOnLaunchAsync();
+            await check;
         }
         catch (Exception ex) { AppLog.Write("Start-up tasks: " + ex); }
     }

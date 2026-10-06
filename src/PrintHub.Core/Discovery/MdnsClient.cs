@@ -25,24 +25,27 @@ public static class MdnsClient
         try
         {
             var typeList = types.ToList();
-            foreach (var s in sockets) Send(s, typeList.Select(t => (t + ".local", (ushort)12)));
-            await ReceiveFor(sockets, TimeSpan.FromMilliseconds(total.TotalMilliseconds * 0.5), db, ct);
-
-            // second round: resolve instances / hosts we only half know
-            var follow = new List<(string, ushort)>();
-            foreach (var inst in db.Instances.Keys.ToList())
+            // A single question can be lost (it is a UDP packet) and a sleeping printer can be slow to answer, which used to leave a printer out of the
+            // list now and then. The question is asked three times, the way Bonjour does, with the follow-up questions for half-known printers in between.
+            var step = TimeSpan.FromMilliseconds(total.TotalMilliseconds / 4);
+            for (int round = 0; round < 4; round++)
             {
-                if (!db.Srv.ContainsKey(inst)) follow.Add((inst, 33));
-                if (!db.Txt.ContainsKey(inst)) follow.Add((inst, 16));
+                if (round < 3) foreach (var s in sockets) Send(s, typeList.Select(t => (t + ".local", (ushort)12)));
+                if (round > 0)
+                {
+                    // resolve instances / hosts we only half know
+                    var follow = new List<(string, ushort)>();
+                    foreach (var inst in db.Instances.Keys.ToList())
+                    {
+                        if (!db.Srv.ContainsKey(inst)) follow.Add((inst, 33));
+                        if (!db.Txt.ContainsKey(inst)) follow.Add((inst, 16));
+                    }
+                    foreach (var srv in db.Srv.Values.ToList())
+                        if (!db.Addr.ContainsKey(srv.Host)) follow.Add((srv.Host, 1));
+                    if (follow.Count > 0) foreach (var s in sockets) Send(s, follow);
+                }
+                await ReceiveFor(sockets, step, db, ct);
             }
-            foreach (var srv in db.Srv.Values.ToList())
-                if (!db.Addr.ContainsKey(srv.Host)) follow.Add((srv.Host, 1));
-            if (follow.Count > 0)
-            {
-                foreach (var s in sockets) Send(s, follow);
-                await ReceiveFor(sockets, TimeSpan.FromMilliseconds(total.TotalMilliseconds * 0.5), db, ct);
-            }
-            else await ReceiveFor(sockets, TimeSpan.FromMilliseconds(total.TotalMilliseconds * 0.5), db, ct);
         }
         finally { foreach (var s in sockets) s.Dispose(); }
 

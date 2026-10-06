@@ -25,6 +25,20 @@ public static class PrinterDiscovery
     internal static bool IsFaxQueue(string name) =>
         System.Text.RegularExpressions.Regex.IsMatch(name, @"^fax\b|\bfax\)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// A cheap summary (a few milliseconds) of what is installed in Windows and plugged in by USB right now. When it changes, a printer was added, removed,
+    /// plugged in, switched on or off, and HSA searches again by itself. Job counts and other things that change while printing are left out.
+    /// </summary>
+    public static string Fingerprint()
+    {
+        var parts = new List<string>();
+        try { parts.AddRange(SpoolerPrinters.List().Select(q => $"queue|{q.Name}|{q.Port}|{q.IsOffline}")); } catch { }
+        try { parts.AddRange(Printing.EpsonMaintenance.PresentPrintInterfaces().Select(p => $"print|{p.Path}")); } catch { }
+        try { parts.AddRange(UsbDeviceScanner.FindHttpInterfaces(true).Select(u => $"web|{u.InstanceId}|{u.Service}")); } catch { }
+        parts.Sort(StringComparer.Ordinal);
+        return string.Join("\n", parts);
+    }
+
     static T Timed<T>(string what, Func<T> f)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();

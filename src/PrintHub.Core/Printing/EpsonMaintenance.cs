@@ -149,11 +149,43 @@ public static class EpsonMaintenance
 
     // ---- finding and opening the printer's USB print interface ----
 
+    static readonly List<Port> OpenPorts = new();
+
+    /// <summary>
+    /// Takes every open printer connection out of remote-command mode. Called when the window closes: a clean, a nozzle check or a power flush that is
+    /// still running when HSA is closed must not leave the printer waiting for more remote commands (it then stays busy long after the job is done).
+    /// Leaving remote mode does not stop a cleaning the printer has already started.
+    /// </summary>
+    public static void ReleaseAll()
+    {
+        Port[] ports; lock (OpenPorts) ports = OpenPorts.ToArray();
+        foreach (var p in ports) p.LeaveRemoteModeNow();
+    }
+
     internal sealed class Port : IDisposable
     {
         readonly Stream _fs;
         public string Path { get; }
-        public Port(string path, Stream fs) { Path = path; _fs = fs; }
+        /// <summary>Remote commands have been sent on this connection and the command to leave remote mode has not.</summary>
+        internal volatile bool InRemoteMode;
+        public Port(string path, Stream fs) { Path = path; _fs = fs; lock (OpenPorts) OpenPorts.Add(this); }
+
+        /// <summary>Best effort and quick: used when the program is closing or a run failed half way. Never throws.</summary>
+        internal void LeaveRemoteModeNow()
+        {
+            if (!InRemoteMode) return;
+            try
+            {
+                var exit = ExitRemoteNoReset();   // no reset: a reset would cut a page or a cleaning short
+                // a thread of its own, not the shared pool: this must work while the program is closing or the pool is busy
+                var write = new Thread(() => { try { _fs.Write(exit, 0, exit.Length); _fs.Flush(); } catch { } }) { IsBackground = true };
+                write.Start();
+                bool done = write.Join(TimeSpan.FromSeconds(2));
+                Diag.Log($"Epson: told the printer to leave remote mode (the run ended early or HSA is closing): {(done ? "sent" : "no answer in 2 s")}");
+            }
+            catch { /* the port may already be gone */ }
+            InRemoteMode = false;
+        }
 
         // pacing; tests shorten these
         public TimeSpan StartDelay { get; init; } = TimeSpan.FromMilliseconds(1500);
@@ -173,6 +205,13 @@ public static class EpsonMaintenance
         /// Leaving earlier (the exit ends with ESC @, a reset) cuts a nozzle-check page off half way.
         /// </summary>
         public async Task<string?> RunAsync(byte[] commands, CancellationToken ct, TimeSpan maxWait, bool endPage = false, bool expectActivity = false)
+        {
+            InRemoteMode = true;
+            try { return await RunCoreAsync(commands, ct, maxWait, endPage, expectActivity).ConfigureAwait(false); }
+            finally { LeaveRemoteModeNow(); }   // a cancelled or failed run must still let the printer leave remote mode
+        }
+
+        async Task<string?> RunCoreAsync(byte[] commands, CancellationToken ct, TimeSpan maxWait, bool endPage, bool expectActivity)
         {
             await SendAsync(commands, ct).ConfigureAwait(false);
             await Task.Delay(StartDelay, ct).ConfigureAwait(false);
@@ -206,9 +245,10 @@ public static class EpsonMaintenance
                 // The page is printed but still in the printer. Leave remote mode WITHOUT a reset, then send the end-of-page: the sheet comes out.
                 // (Checked on real printers: a "job end" command here makes the printer print the pattern a second time.)
                 await SendAsync(ExitRemoteNoReset(), ct).ConfigureAwait(false);
+                InRemoteMode = false;
                 await SendAsync(EndOfPage(), ct).ConfigureAwait(false);
             }
-            else await SendAsync(ExitRemote(), ct).ConfigureAwait(false);
+            else { await SendAsync(ExitRemote(), ct).ConfigureAwait(false); InRemoteMode = false; }
             return last;
         }
 
@@ -238,6 +278,13 @@ public static class EpsonMaintenance
         /// <summary>Send a query and collect the reply until it contains "ST:xx;" (or the printer goes quiet), then leave remote mode.</summary>
         public async Task<byte[]> ExchangeAsync(byte[] query, TimeSpan wait, CancellationToken ct)
         {
+            InRemoteMode = true;
+            try { return await ExchangeCoreAsync(query, wait, ct).ConfigureAwait(false); }
+            finally { LeaveRemoteModeNow(); }
+        }
+
+        async Task<byte[]> ExchangeCoreAsync(byte[] query, TimeSpan wait, CancellationToken ct)
+        {
             await SendAsync(query, ct).ConfigureAwait(false);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(wait);
@@ -255,11 +302,16 @@ public static class EpsonMaintenance
                 }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { /* nothing more is coming */ }
-            try { await SendAsync(ExitRemote(), ct).ConfigureAwait(false); } catch (IOException) { }
+            try { await SendAsync(ExitRemote(), ct).ConfigureAwait(false); InRemoteMode = false; } catch (IOException) { }
             return rx.AsSpan(0, total).ToArray();
         }
 
-        public void Dispose() => _fs.Dispose();
+        public void Dispose()
+        {
+            LeaveRemoteModeNow();
+            lock (OpenPorts) OpenPorts.Remove(this);
+            _fs.Dispose();
+        }
     }
 
     static Port OpenPort(PrinterDevice dev)

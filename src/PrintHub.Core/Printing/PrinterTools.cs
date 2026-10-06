@@ -34,11 +34,13 @@ public static class PrinterTools
         return path;
     }
 
-    /// <summary>Print the bundled colour test page exactly as it is: colour, fitted to the page, no other changes.</summary>
-    public static async Task PrintBundledTestPageAsync(PrinterDevice dev, PrinterSession? session, PrintRoute route = PrintRoute.Auto, CancellationToken ct = default)
+    public const int MaxTestPageCopies = 99;
+
+    /// <summary>Print the bundled colour test page exactly as it is: colour, fitted to the page, no other changes. <paramref name="copies"/> pages are printed.</summary>
+    public static async Task PrintBundledTestPageAsync(PrinterDevice dev, PrinterSession? session, PrintRoute route = PrintRoute.Auto, int copies = 1, CancellationToken ct = default)
     {
         var file = ExtractBundledTestPage();
-        await PrintService.PrintFileAsync(dev, session, file, new PrintOptions { Route = route, Color = true, Scale = ScaleMode.FitToPage, Quality = PrintQuality.Normal }, ct);
+        await PrintService.PrintFileAsync(dev, session, file, new PrintOptions { Route = route, Color = true, Scale = ScaleMode.FitToPage, Quality = PrintQuality.Normal, Copies = Math.Clamp(copies, 1, MaxTestPageCopies) }, ct);
     }
 
     public static async Task IdentifyAsync(PrinterSession session, CancellationToken ct = default)

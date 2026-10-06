@@ -26,6 +26,10 @@ public sealed partial class HomePage : Page
 
     void OnChanged() => DispatcherQueue.TryEnqueue(Refresh);
 
+    // The status is refreshed every 20 seconds and each refresh raises StatusChanged. Tearing down and rebuilding the tiles, supply rows and
+    // alerts every time made the whole page flicker when it was simply left open, so each part is rebuilt only when what it shows has changed.
+    string? _suppliesKey, _alertsKey, _tilesKey;
+
     void Refresh()
     {
         var s = App.State; var d = s.Current;
@@ -39,6 +43,7 @@ public sealed partial class HomePage : Page
             DetailText.Text = s.Devices.Count > 0 ? "Pick a printer from the list at the top." : "";
             StateLine.Text = "";
             SuppliesCard.Visibility = Visibility.Collapsed;
+            _suppliesKey = null;
         }
         else
         {
@@ -50,9 +55,14 @@ public sealed partial class HomePage : Page
             DetailText.Text = string.Join("  ·  ", parts);
             StateLine.Text = s.StateText;
 
-            SuppliesPanel.Children.Clear();
             var supplies = s.Status?.Supplies.Where(x => !x.IsWaste).ToList() ?? new();
-            foreach (var sup in supplies) SuppliesPanel.Children.Add(Ui.SupplyRow(sup));
+            var suppliesKey = d.Id + "|" + string.Join(";", supplies.Select(x => $"{x.Name}:{x.Percent}:{x.IsLow}"));
+            if (suppliesKey != _suppliesKey)
+            {
+                _suppliesKey = suppliesKey;
+                SuppliesPanel.Children.Clear();
+                foreach (var sup in supplies) SuppliesPanel.Children.Add(Ui.SupplyRow(sup));
+            }
             SuppliesCard.Visibility = Visibility.Visible;
             SuppliesNote.Text = supplies.Count > 0 ? ""
                 : s.Status is not null ? "This printer doesn't report ink or toner levels over this connection."
@@ -60,15 +70,23 @@ public sealed partial class HomePage : Page
                 : s.Connecting ? "Connecting…" : "Supply levels will appear when the printer responds.";
         }
 
-        AlertsPanel.Children.Clear();
-        if (s.StatusError is not null && s.Status is null)
-            AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Title = "Can't reach the printer", Message = s.StatusError });
-        foreach (var a in s.Status?.Alerts ?? Enumerable.Empty<string>())
-            AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = a.StartsWith("Error") ? InfoBarSeverity.Error : InfoBarSeverity.Warning, Title = a });
-        foreach (var low in s.Status?.Supplies.Where(x => x.IsLow && !x.IsWaste) ?? Enumerable.Empty<Core.Ipp.SupplyLevel>())
-            AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Title = $"{low.Name} is low ({low.Percent}%)" });
+        var lows = (s.Status?.Supplies.Where(x => x.IsLow && !x.IsWaste) ?? Enumerable.Empty<Core.Ipp.SupplyLevel>()).ToList();
+        var alerts = (s.Status?.Alerts ?? Enumerable.Empty<string>()).ToList();
+        var alertsKey = (s.StatusError is not null && s.Status is null ? s.StatusError : "") + "|" + string.Join(";", alerts) + "|" + string.Join(";", lows.Select(l => $"{l.Name}:{l.Percent}"));
+        if (alertsKey != _alertsKey)
+        {
+            _alertsKey = alertsKey;
+            AlertsPanel.Children.Clear();
+            if (s.StatusError is not null && s.Status is null)
+                AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Title = "Can't reach the printer", Message = s.StatusError });
+            foreach (var a in alerts)
+                AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = a.StartsWith("Error") ? InfoBarSeverity.Error : InfoBarSeverity.Warning, Title = a });
+            foreach (var low in lows)
+                AlertsPanel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Title = $"{low.Name} is low ({low.Percent}%)" });
+        }
 
-        BuildTiles(d);
+        var tilesKey = $"{d?.Id}|{d?.CanPrint}|{d?.CanScan}";
+        if (tilesKey != _tilesKey) { _tilesKey = tilesKey; BuildTiles(d); }
     }
 
     void BuildTiles(Core.Discovery.PrinterDevice? d)
@@ -89,12 +107,26 @@ public sealed partial class HomePage : Page
         var s = App.State;
         if (s.Current is null) return;
         var button = sender as Button;
+
+        // how many copies? (the last number is remembered, so a repeat is one click and Enter)
+        var box = new NumberBox { Minimum = 1, Maximum = Core.Printing.PrinterTools.MaxTestPageCopies, Value = Math.Clamp(s.Settings.TestPageCopies, 1, Core.Printing.PrinterTools.MaxTestPageCopies),
+                                  SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, SmallChange = 1, LargeChange = 5, Width = 160 };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, "Copies");
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock { Text = $"How many copies of the colour test page should {s.Current.Name} print?", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(box);
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "Print test page", Content = panel, PrimaryButtonText = "Print", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        int copies = double.IsNaN(box.Value) ? 1 : (int)Math.Clamp(Math.Round(box.Value), 1, Core.Printing.PrinterTools.MaxTestPageCopies);
+        s.Settings.TestPageCopies = copies; s.SaveSettings();
+
         if (button is not null) button.IsEnabled = false;
-        App.Window.Toast($"Sending the colour test page to {s.Current.Name}…");
+        string what = copies == 1 ? "the colour test page" : $"{copies} copies of the colour test page";
+        App.Window.Toast($"Sending {what} to {s.Current.Name}…");
         try
         {
-            await Core.Printing.PrinterTools.PrintBundledTestPageAsync(s.Current, s.Session, s.Settings.PrintRoute);
-            App.Window.Toast($"Test page sent to {s.Current.Name}.", InfoBarSeverity.Success);
+            await Core.Printing.PrinterTools.PrintBundledTestPageAsync(s.Current, s.Session, s.Settings.PrintRoute, copies);
+            App.Window.Toast(copies == 1 ? $"Test page sent to {s.Current.Name}." : $"{copies} test pages sent to {s.Current.Name}.", InfoBarSeverity.Success);
             _ = s.RefreshStatusAsync();
         }
         catch (Exception ex)

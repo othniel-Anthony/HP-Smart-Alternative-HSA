@@ -44,6 +44,12 @@ public sealed class AppState
         _timer.Tick += async (_, _) => await RefreshStatusAsync();
         _timer.Start();
 
+        // A printer plugged in, switched on or added in Windows while HSA is open is noticed within a few seconds (see WatchAsync).
+        _watch = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _watch.Interval = TimeSpan.FromSeconds(4);
+        _watch.Tick += async (_, _) => await WatchAsync();
+        _watch.Start();
+
         // The printer used last time is usually still where it was: connect to it right away instead of waiting for the
         // network search (about 3 s of Bonjour) to finish. The search below then completes the picture (USB, Windows queue, scanners).
         var remembered = Devices.FirstOrDefault(d => d.Id == Settings.SelectedPrinterId && d.HasNetwork);
@@ -54,6 +60,24 @@ public sealed class AppState
     }
 
     Task? _earlySelect;
+    Microsoft.UI.Dispatching.DispatcherQueueTimer? _watch;
+    string? _fingerprint;
+    DateTime _lastSearch = DateTime.UtcNow;
+
+    /// <summary>How often a search runs even when nothing local changed (network printers appear without any sign on this computer).</summary>
+    static readonly TimeSpan BackgroundSearchEvery = TimeSpan.FromMinutes(3);
+
+    /// <summary>Called every few seconds: searches again when the USB / Windows printers changed, and now and then for network printers.</summary>
+    async Task WatchAsync()
+    {
+        if (Discovering || !SettingsLoaded || _fingerprint is null) return;
+        string now;
+        try { now = await Task.Run(PrinterDiscovery.Fingerprint); } catch { return; }
+        bool changed = now != _fingerprint;
+        if (!changed && DateTime.UtcNow - _lastSearch < BackgroundSearchEvery) return;
+        AppLog.Write(changed ? "Printers were added, removed or switched: searching again" : "Searching for network printers again (periodic)");
+        await DiscoverAsync(background: true);
+    }
     /// <summary>The user picked a printer by hand in this session: a search must not take the choice away.</summary>
     bool _userChose;
     /// <summary>Names of the printers that were plugged in by USB (and online) at the previous search.</summary>
@@ -69,15 +93,22 @@ public sealed class AppState
         return a.IppUri == b.IppUri && a.EsclUri == b.EsclUri && a.WebUri == b.WebUri && UsbFirst(a) == UsbFirst(b) && !UsbFirst(a);
     }
 
+    static string DeviceSummary(IEnumerable<PrinterDevice> devices) =>
+        string.Join("\n", devices.Select(d => $"{d.Id}|{d.Name}|{d.Connection}|{d.OnUsb}").OrderBy(x => x, StringComparer.Ordinal));
+
     public void SaveSettings()
     {
         try { SettingsStore.Save(Settings); } catch (Exception ex) { AppLog.Write("Saving settings failed: " + ex.Message); }
     }
 
-    public async Task DiscoverAsync()
+    /// <param name="background">A search HSA started by itself: the window shows nothing until the list really changed, and the printer in use stays connected.</param>
+    public async Task DiscoverAsync(bool background = false)
     {
         if (Discovering) return;
-        Discovering = true; DevicesChanged?.Invoke();
+        Discovering = true; if (!background) DevicesChanged?.Invoke();
+        string listBefore = DeviceSummary(Devices);
+        string fingerprint = "";
+        try { fingerprint = await Task.Run(PrinterDiscovery.Fingerprint); } catch { }
         try
         {
             StartupTrace.Mark("Printer search started");
@@ -88,12 +119,17 @@ public sealed class AppState
                 if (!found.Any(f => f.Id == saved.Id || (f.Address != null && f.Address == saved.Address) || PrinterDevice.Similar(f.Name, saved.Name)))
                     found.Add(saved.ToDevice());
 
+            // a search HSA started itself must not disturb the printer in use: when nothing about it changed, keep the very same object (and its connection)
+            if (background && Current is not null && found.FirstOrDefault(d => d.Id == Current.Id || PrinterDevice.Similar(d.Name, Current.Name)) is { } same
+                && same.Connection == Current.Connection && same.CanScan == Current.CanScan && same.CanPrint == Current.CanPrint && same.OnUsb == Current.OnUsb)
+                found[found.IndexOf(same)] = Current;
+
             Devices = found;
-            AppLog.Write($"Discovery: {found.Count} printer(s): {string.Join(", ", found.Select(d => $"{d.Name} [{d.Connection}]"))}");
+            AppLog.Write($"Discovery{(background ? " (automatic)" : "")}: {found.Count} printer(s): {string.Join(", ", found.Select(d => $"{d.Name} [{d.Connection}]"))}");
         }
-        catch (Exception ex) { AppLog.Write("Discovery failed: " + ex); App.Window.Toast("Printer search failed: " + ex.Message, Microsoft.UI.Xaml.Controls.InfoBarSeverity.Error); }
-        finally { Discovering = false; }
-        DevicesChanged?.Invoke();
+        catch (Exception ex) { if (!background) { AppLog.Write("Discovery failed: " + ex); App.Window.Toast("Printer search failed: " + ex.Message, Microsoft.UI.Xaml.Controls.InfoBarSeverity.Error); } else AppLog.Write("Automatic discovery failed: " + ex.Message); }
+        finally { Discovering = false; _lastSearch = DateTime.UtcNow; _fingerprint = fingerprint.Length > 0 ? fingerprint : _fingerprint; }
+        if (!background || DeviceSummary(Devices) != listBefore) DevicesChanged?.Invoke();
 
         if (_earlySelect is { } early) { _earlySelect = null; try { await early; } catch { } }
 
