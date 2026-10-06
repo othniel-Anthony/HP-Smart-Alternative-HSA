@@ -225,7 +225,7 @@ public sealed partial class MainWindow : Window
     {
         if (_updatingCombo) return;
         if (PrinterCombo.SelectedItem is ComboBoxItem { Tag: PrinterDevice d } && !ReferenceEquals(d, App.State.Current))
-            await App.State.SelectAsync(d);
+            await App.State.ChooseAsync(d);
     }
 
     async void Refresh_Click(object sender, RoutedEventArgs e) => await App.State.DiscoverAsync();

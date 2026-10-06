@@ -54,6 +54,13 @@ public sealed class AppState
     }
 
     Task? _earlySelect;
+    /// <summary>The user picked a printer by hand in this session: a search must not take the choice away.</summary>
+    bool _userChose;
+    /// <summary>Names of the printers that were plugged in by USB (and online) at the previous search.</summary>
+    List<string> _usbNames = new();
+
+    /// <summary>A printer chosen by the user (from the printer list or added by address).</summary>
+    public async Task ChooseAsync(PrinterDevice? device) { _userChose = true; await SelectAsync(device); }
 
     /// <summary>True when a session opened for <paramref name="a"/> would be identical to one opened for <paramref name="b"/>.</summary>
     bool SameConnection(PrinterDevice a, PrinterDevice b)
@@ -92,7 +99,21 @@ public sealed class AppState
 
         // re-select the previously used printer (or the only one)
         var keep = Current is null ? null : Devices.FirstOrDefault(d => d.Id == Current.Id || PrinterDevice.Similar(d.Name, Current.Name));
-        var wanted = keep
+
+        // A printer that is plugged in by USB and online is the one the user wants to use: pick it without asking. (Until the user picks one by
+        // hand, it wins over the remembered printer; afterwards only a printer plugged in since the last search is switched to.)
+        var usbPick = Environment.GetEnvironmentVariable("HSA_NO_USB_AUTOSELECT") == "1" ? null : PrinterPicker.PickUsb(Devices, Current, Settings.SelectedPrinterId, SpoolerPrinters.GetDefault(), _userChose, _usbNames);
+        _usbNames = Devices.Where(PrinterPicker.IsOnlineOnUsb).Select(d => d.Name).ToList();
+        bool switchedAway = false;
+        if (usbPick is not null)
+        {
+            if (keep is not null && (usbPick.Id == keep.Id || PrinterDevice.Similar(usbPick.Name, keep.Name))) usbPick = keep;   // already on it
+            else if (Current is not null && !Connecting) switchedAway = true;
+            AppLog.Write($"USB printer chosen automatically: {usbPick.Name}");
+        }
+
+        var wanted = usbPick
+            ?? keep
             ?? Devices.FirstOrDefault(d => d.Id == Settings.SelectedPrinterId)
             ?? Devices.FirstOrDefault(d => d.SpoolerName != null && SpoolerPrinters.GetDefault() == d.SpoolerName)
             ?? (Devices.Count == 1 ? Devices[0] : null);
@@ -110,7 +131,11 @@ public sealed class AppState
                 CurrentChanged?.Invoke();
             if (wanted.SpoolerName is not null) await RefreshStatusAsync(); // pick up the Windows queue state
         }
-        else await SelectAsync(wanted);
+        else
+        {
+            await SelectAsync(wanted);
+            if (switchedAway) App.Window.Toast($"Switched to {wanted.Name}: it is connected by USB and online.", Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational);
+        }
     }
 
     public async Task SelectAsync(PrinterDevice? device)
@@ -174,7 +199,7 @@ public sealed class AppState
         Devices.RemoveAll(d => d.Id == dev.Id || (d.Address != null && d.Address == dev.Address));
         Devices.Add(dev);
         DevicesChanged?.Invoke();
-        await SelectAsync(dev);
+        await ChooseAsync(dev);
         return dev;
     }
 

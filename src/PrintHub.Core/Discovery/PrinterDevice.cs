@@ -21,6 +21,10 @@ public sealed class PrinterDevice
     public string? SpoolerPort { get; set; }
     public string? SpoolerDriver { get; set; }
     public uint SpoolerStatus { get; set; }
+    /// <summary>The Windows queue is switched to "use printer offline" or reports the printer offline.</summary>
+    public bool SpoolerOffline { get; set; }
+    /// <summary>Plugged in by USB at the moment of the search (not just a queue left over from earlier). Set by <see cref="PrinterPicker.MarkUsb"/>.</summary>
+    public bool OnUsb { get; set; }
 
     public UsbInterfaceInfo? Usb { get; set; }
     public List<UsbInterfaceInfo> UsbCandidates { get; set; } = new();
@@ -93,7 +97,7 @@ public sealed class PrinterDevice
         if (Model == "") Model = o.Model;
         Address ??= o.Address;
         IppUri ??= o.IppUri; EsclUri ??= o.EsclUri; WebUri ??= o.WebUri;
-        if (SpoolerName is null) { SpoolerName = o.SpoolerName; SpoolerPort = o.SpoolerPort; SpoolerDriver = o.SpoolerDriver; SpoolerStatus = o.SpoolerStatus; }
+        if (SpoolerName is null) { SpoolerName = o.SpoolerName; SpoolerPort = o.SpoolerPort; SpoolerDriver = o.SpoolerDriver; SpoolerStatus = o.SpoolerStatus; SpoolerOffline = o.SpoolerOffline; }
         if (Usb is null) Usb = o.Usb;
         foreach (var u in o.UsbCandidates) if (!UsbCandidates.Any(x => x.InstanceId == u.InstanceId)) UsbCandidates.Add(u);
         WiaDeviceId ??= o.WiaDeviceId;

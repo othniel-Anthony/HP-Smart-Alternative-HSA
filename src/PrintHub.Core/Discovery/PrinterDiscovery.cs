@@ -78,7 +78,7 @@ public static class PrinterDiscovery
             if (q.Name.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase) || q.Name.Contains("Fax", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("SHRFAX")) continue;
             var ip = SpoolerPrinters.AddressFromPort(q.Port);
             var existing = devices.FirstOrDefault(d => (ip is not null && d.Address == ip) || PrinterDevice.Similar(d.Name, q.Name) || PrinterDevice.Similar(d.Name, q.Driver));
-            var rec = new PrinterDevice { Name = q.Name, Manufacturer = q.Driver.Split(' ')[0], Model = q.Name, Address = ip, SpoolerName = q.Name, SpoolerPort = q.Port, SpoolerDriver = q.Driver, SpoolerStatus = q.Status };
+            var rec = new PrinterDevice { Name = q.Name, Manufacturer = q.Driver.Split(' ')[0], Model = q.Name, Address = ip, SpoolerName = q.Name, SpoolerPort = q.Port, SpoolerDriver = q.Driver, SpoolerStatus = q.Status, SpoolerOffline = q.IsOffline };
             if (existing is not null) existing.Merge(rec); else devices.Add(rec);
         }
 
@@ -104,6 +104,7 @@ public static class PrinterDiscovery
         }
 
         foreach (var d in devices) if (d.Manufacturer == "") d.Manufacturer = d.Name.Split(' ')[0];
+        Timed("USB presence", () => { PrinterPicker.MarkUsb(devices); return 0; });
         return devices.OrderBy(d => d.Name).ToList();
     }
 

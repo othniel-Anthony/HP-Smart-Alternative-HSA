@@ -334,7 +334,7 @@ public static class EpsonMaintenance
         return null;
     }
 
-    static string? ContainerOfPort(string port)
+    internal static string? ContainerOfPort(string port)
     {
         try
         {
