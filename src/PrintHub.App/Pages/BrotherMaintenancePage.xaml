@@ -1,0 +1,82 @@
+<Page x:Class="PrintHub.App.Pages.BrotherMaintenancePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Loaded="Page_Loaded" Unloaded="Page_Unloaded">
+  <ScrollViewer>
+    <StackPanel Padding="32,24" Spacing="16" MaxWidth="820" HorizontalAlignment="Left">
+      <TextBlock x:Name="Heading" Style="{StaticResource TitleTextBlockStyle}" Text="Brother maintenance" />
+      <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" />
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="10">
+          <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Ink levels" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" />
+            <Button x:Name="RefreshButton" Grid.Column="1" Click="Refresh_Click" Content="Refresh" AutomationProperties.Name="Refresh ink levels" />
+          </Grid>
+          <StackPanel x:Name="InkPanel" Spacing="2" />
+          <TextBlock x:Name="InkNote" Opacity="0.7" TextWrapping="Wrap" FontSize="12" Text="Read from the printer over the USB cable." />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Print head cleaning" Style="{StaticResource SectionTitle}" />
+          <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Print the quality check sheet first. Clean only if it shows missing dots, white lines or faded areas, and start with Normal: the stronger levels use a lot of ink and fill the ink absorber faster. A cleaning takes a minute or two. The printer decides what it fires: on an MFC-J5955DW a black-only cleaning also used some colour ink." />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <ComboBox x:Name="ScopeCombo" Header="Clean" Width="190" SelectedIndex="0" AutomationProperties.Name="Colours to clean">
+              <ComboBoxItem Content="All colours" Tag="All" />
+              <ComboBoxItem Content="Black only" Tag="Black" />
+              <ComboBoxItem Content="Colours only" Tag="Color" />
+            </ComboBox>
+            <ComboBox x:Name="StrengthCombo" Header="Strength" Width="190" SelectedIndex="0" AutomationProperties.Name="Cleaning strength">
+              <ComboBoxItem Content="Normal" Tag="Normal" />
+              <ComboBoxItem Content="Strong" Tag="Strong" />
+              <ComboBoxItem Content="Strongest" Tag="Strongest" />
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button x:Name="CleanButton" Click="Clean_Click" Content="Clean print head" AutomationProperties.Name="Clean print head" />
+            <Button x:Name="CheckButton" Click="Check_Click" Content="Print quality check sheet" AutomationProperties.Name="Print quality check sheet" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Expander x:Name="AlignExpander" Header="Print head alignment" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Head alignment">
+        <StackPanel Spacing="8">
+          <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                     Text="HSA cannot start the alignment on a Brother printer. Brother's own Windows software cannot either: the printer only offers it on its own screen. On the printer touch Ink, then Improve Print Quality, then Alignment, and follow its prompts (Auto uses the scanner glass)." />
+          <TextBlock x:Name="AlignCounters" TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="PadExpander" Header="Ink absorber (waste ink) counters" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Ink absorber counters">
+        <StackPanel Spacing="8">
+          <TextBlock x:Name="PadCounters" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+          <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                     Text="HSA can show these counters but cannot reset them. Brother does not publish a command for it: the reset is a service-menu function on the printer itself, and Brother's own software has no such command. Brother says the ink absorber box has to be replaced by a service centre when the printer reports it full, because resetting alone can let ink leak. Brother does not publish the number at which the box counts as full." />
+        </StackPanel>
+      </Expander>
+
+      <Expander x:Name="DetailsExpander" Header="Printer details" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" AutomationProperties.Name="Printer details">
+        <StackPanel Spacing="8">
+          <TextBlock x:Name="DetailsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+          <Button x:Name="CopyButton" Click="Copy_Click" Content="Copy the printer's full report" AutomationProperties.Name="Copy full report" />
+        </StackPanel>
+      </Expander>
+
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <HyperlinkButton x:Name="DriverButton" Click="Driver_Click" Content="Brother driver settings" />
+        <HyperlinkButton x:Name="QueueButton" Click="Queue_Click" Content="Print queue" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <ProgressRing x:Name="Ring" IsActive="False" Width="22" Height="22" />
+        <TextBlock x:Name="ResultText" TextWrapping="Wrap" IsTextSelectionEnabled="True" VerticalAlignment="Center" MaxWidth="700" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</Page>

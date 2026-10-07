@@ -38,6 +38,9 @@ public sealed class PrinterDevice
     /// <summary>True for Canon printers (by maker, name or Windows driver). Gates the Canon-only maintenance tools.</summary>
     public bool IsCanon => Manufacturer.Contains("canon", StringComparison.OrdinalIgnoreCase) || Name.Contains("canon", StringComparison.OrdinalIgnoreCase)
                            || Name.StartsWith("PIXMA", StringComparison.OrdinalIgnoreCase) || (SpoolerDriver?.Contains("canon", StringComparison.OrdinalIgnoreCase) ?? false);
+    /// <summary>True for Brother printers (by maker, name, Windows driver or USB vendor id). Gates the Brother-only maintenance tools.</summary>
+    public bool IsBrother => Manufacturer.Contains("brother", StringComparison.OrdinalIgnoreCase) || Name.Contains("brother", StringComparison.OrdinalIgnoreCase)
+                             || (SpoolerDriver?.Contains("brother", StringComparison.OrdinalIgnoreCase) ?? false) || UsbCandidates.Any(u => u.VendorId == 0x04F9);
     public bool HasNetwork => IppUri is not null || EsclUri is not null;
     public bool HasUsbHttp => Usb is { Openable: true } || UsbCandidates.Any(u => u.Openable);
     public bool CanScan => EsclUri is not null || WiaDeviceId is not null || HasUsbHttp;

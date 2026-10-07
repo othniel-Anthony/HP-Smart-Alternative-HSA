@@ -376,7 +376,9 @@ public static class EpsonMaintenance
     /// </summary>
     public static string? FindPrintInterface(PrinterDevice dev, int vendor = EpsonVendor)
     {
-        var epson = PresentPrintInterfaces().Where(p => p.Vendor == vendor && !p.Name.Contains("fax", StringComparison.OrdinalIgnoreCase)).ToList();
+        // "&PI_" is a printer interface that carries IPP over USB (HTTP), not the printer's own language; Brother printers have one next to the real one
+        var epson = PresentPrintInterfaces().Where(p => p.Vendor == vendor && !p.Name.Contains("fax", StringComparison.OrdinalIgnoreCase)
+            && !p.Path.Contains("&PI_", StringComparison.OrdinalIgnoreCase)).ToList();
         if (epson.Count == 0) return null;
 
         // the queue's USB port names the physical printer it was installed for: exact, where the name is the same for two printers of one model

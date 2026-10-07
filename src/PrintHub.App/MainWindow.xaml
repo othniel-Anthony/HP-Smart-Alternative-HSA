@@ -52,6 +52,10 @@
         <NavigationViewItem x:Name="CanonMaintenanceItem" Content="Canon maintenance" Tag="canonmaintenance" Visibility="Collapsed">
           <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
         </NavigationViewItem>
+        <!-- shown only while a Brother printer is selected -->
+        <NavigationViewItem x:Name="BrotherMaintenanceItem" Content="Brother maintenance" Tag="brothermaintenance" Visibility="Collapsed">
+          <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+        </NavigationViewItem>
       </NavigationView.MenuItems>
       <NavigationView.FooterMenuItems>
         <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />
