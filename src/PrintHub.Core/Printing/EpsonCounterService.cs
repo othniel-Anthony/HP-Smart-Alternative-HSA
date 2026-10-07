@@ -140,6 +140,25 @@ public static class EpsonCounterService
 
     static string Safe(string s) => new string(s.Select(c => char.IsLetterOrDigit(c) || c == '-' ? c : '_').ToArray());
 
+    /// <summary>
+    /// Asks an Epson plugged in by USB for its status block (state, error and the ink left in each cartridge). It is the same short conversation the waste counters use
+    /// (a D4 session over the print interface), one question long. Null when the printer does not answer with a status block.
+    /// </summary>
+    public static async Task<EpsonStatusReading?> ReadStatusAsync(PrinterDevice dev, CancellationToken ct = default)
+    {
+        return await WithSessionAsync(dev, async ctrl =>
+        {
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                var reply = await ctrl.RequestAsync(EpsonCtrl.StatusFrame(), ct).ConfigureAwait(false);
+                var status = EpsonStatusReading.Parse(reply);
+                if (status is not null) return status;
+                Diag.Log($"Epson status: no complete status block (attempt {attempt + 1}, {reply?.Length ?? 0} bytes)");
+            }
+            return null;
+        }, ct).ConfigureAwait(false);
+    }
+
     static async Task<T> WithSessionAsync<T>(PrinterDevice dev, Func<IEpsonControl, Task<T>> work, CancellationToken ct)
     {
         using var hold = PrinterActivity.Begin();   // HSA's own searches and status requests wait until the printer is free again

@@ -60,6 +60,8 @@ public sealed class AppState
     }
 
     Task? _earlySelect;
+    PrinterStatus? _epsonLast;     // what the last look at a USB Epson showed, and when
+    string? _epsonLastFor, _epsonFailedFor; DateTime _epsonAt, _epsonFailedAt;
     PrinterStatus? _brotherLast;   // what the last look at a USB Brother showed
     string? _brotherLastFor;
     Microsoft.UI.Dispatching.DispatcherQueueTimer? _watch;
@@ -234,6 +236,27 @@ public sealed class AppState
                 if (live is not null) { _brotherLast = BrotherMaintenance.ToPrinterStatus(dev, live); _brotherLastFor = dev.Name; }
             }
             if (_brotherLast is not null && _brotherLastFor == dev.Name) { status = _brotherLast; error = null; }
+        }
+
+        // An Epson plugged in by USB has no IPP or web services HSA can reach: ask it over the print interface (the same short conversation the waste counters use).
+        // Not while a maintenance run has the printer or the Windows queue has a job; and at most once a minute (the answer is remembered between asks).
+        if (dev.IsEpson && (status is null || status.Supplies.Count == 0) && dev.OnUsb)
+        {
+            bool fresh = _epsonLast is not null && _epsonLastFor == dev.Name && DateTime.UtcNow - _epsonAt < TimeSpan.FromSeconds(60);
+            // a printer that did not answer is left alone for two minutes: it is off, asleep or needs a power cycle, and asking again every 20 seconds helps none of that
+            bool backoff = _epsonFailedFor == dev.Name && DateTime.UtcNow - _epsonFailedAt < TimeSpan.FromMinutes(2);
+            if (!fresh && !backoff && !PrinterActivity.IsBusy && (queue?.Jobs ?? 0) == 0)
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    var reading = await EpsonCounterService.ReadStatusAsync(dev, cts.Token);
+                    if (reading is not null) { _epsonLast = reading.ToPrinterStatus(dev.Name); _epsonLastFor = dev.Name; _epsonAt = DateTime.UtcNow; _epsonFailedFor = null; }
+                    else { _epsonFailedFor = dev.Name; _epsonFailedAt = DateTime.UtcNow; }
+                }
+                catch (Exception ex) { AppLog.Write("Epson status: " + ex.Message + " (not asking this printer again for two minutes)"); _epsonFailedFor = dev.Name; _epsonFailedAt = DateTime.UtcNow; }
+            }
+            if (_epsonLast is not null && _epsonLastFor == dev.Name) { status = _epsonLast; error = null; }
         }
 
         if (gen != _statusGeneration || !ReferenceEquals(dev, Current)) return; // a newer refresh/selection won
