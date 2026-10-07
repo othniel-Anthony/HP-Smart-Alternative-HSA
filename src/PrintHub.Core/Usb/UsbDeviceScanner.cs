@@ -42,10 +42,12 @@ public static partial class UsbDeviceScanner
                 if (cm is null) continue;
                 byte cls = Convert.ToByte(cm.Groups[1].Value, 16), sub = Convert.ToByte(cm.Groups[2].Value, 16), prot = Convert.ToByte(cm.Groups[3].Value, 16);
 
+                var boundTo = k.GetValue("Service") as string ?? "";
                 var kind = (cls, sub, prot) switch
                 {
                     (0x07, 0x01, 0x04) => UsbHttpKind.IppUsb,
                     (0xFF, 0x04, 0x01) when vid == 0x03F0 => UsbHttpKind.HpWebServices,
+                    (0xFF, 0xFF, 0xFF) when vid == 0x04F9 && boundTo.Equals("WINUSB", StringComparison.OrdinalIgnoreCase) => UsbHttpKind.BrotherWebServices,
                     _ => UsbHttpKind.None,
                 };
 

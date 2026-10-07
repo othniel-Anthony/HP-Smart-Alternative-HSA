@@ -225,6 +225,70 @@ public static class BrotherMaintenance
         return new BrotherPjlChannel(fs);
     }
 
+    // ---------------------------------------------------------------- the Home page's view of the printer
+
+    /// <summary>A quick look at a Brother over USB: its state and its report (ink, firmware, serial number).</summary>
+    public sealed record Live(BrotherStatus? Status, BrotherReport? Report);
+
+    /// <summary>
+    /// Asks the printer for its state and its report, for the Home page. Never throws: null when the printer is not on USB or does not answer.
+    /// Short waits, because this runs every few seconds while the app is open.
+    /// </summary>
+    public static async Task<Live?> ReadLiveAsync(PrinterDevice dev, CancellationToken ct = default)
+    {
+        try
+        {
+            if (!IsOnUsb(dev)) return null;
+            using var hold = PrinterActivity.Begin();
+            using var ch = Open(dev, out _);
+            var status = await ReadStatusAsync(ch, TimeSpan.FromSeconds(2.5), ct).ConfigureAwait(false);
+            BrotherReport? report = null;
+            try { report = await ReadReportAsync(ch, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false); } catch (InvalidOperationException) { }
+            return status is null && report is null ? null : new Live(status, report);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            Diag.Log("Brother live status: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Brother's IPP answer names its cartridges "BK", "C", "M" and "Y". Written out in place, so every page shows "Black", "Cyan", "Magenta" and "Yellow"
+    /// (the same as the Brother maintenance page).
+    /// </summary>
+    public static void FriendlyInkNames(PrinterStatus status)
+    {
+        for (int i = 0; i < status.Supplies.Count; i++)
+        {
+            var s = status.Supplies[i];
+            string? full = s.Name.Trim().ToUpperInvariant() switch { "BK" or "K" or "B" => "Black", "C" => "Cyan", "M" => "Magenta", "Y" => "Yellow", _ => null };
+            if (full is not null) status.Supplies[i] = s with { Name = full };
+        }
+    }
+
+    static readonly Regex BusyWords = new(@"print|clean|busy|receiv|process|wait|warm|ink|purg|flush|align|copy|scan|fax|initial", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    static string FirmwareVersion(string fw) { var m = Regex.Match(fw, @"Ver\.?\s*(.+)$"); return m.Success ? m.Groups[1].Value : fw; }
+
+    /// <summary>The printer's state and ink as the Home page shows them (the same shape an IPP printer gives).</summary>
+    public static PrinterStatus ToPrinterStatus(PrinterDevice dev, Live live)
+    {
+        var st = live.Status; var r = live.Report;
+        var state = st is null || st.IsReady ? PrinterState.Idle : BusyWords.IsMatch(st.Display) ? PrinterState.Processing : PrinterState.Stopped;
+        var status = new PrinterStatus
+        {
+            MakeAndModel = r?.Model ?? dev.Name,
+            State = state,
+            SerialNumber = r?.Serial ?? "",
+            Firmware = r?.Firmware is { } fw ? FirmwareVersion(fw) : "",
+        };
+        if (state == PrinterState.Stopped && st is not null && st.Display.Length > 0)
+            status.StateReasons.Add(Regex.Replace(st.Display.Trim().ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-') + "-error");   // "Paper Jam" -> "Error: Paper jam"
+        if (r is not null) status.Supplies.AddRange(r.Ink);
+        return status;
+    }
+
     // ---------------------------------------------------------------- public entry points
 
     public static async Task<BrotherReport> ReadReportAsync(PrinterDevice dev, CancellationToken ct = default)

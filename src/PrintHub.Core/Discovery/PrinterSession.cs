@@ -48,7 +48,8 @@ public sealed class PrinterSession : IAsyncDisposable
         var candidates = Device.UsbCandidates.Where(u => u.Openable).ToList();
         if (Device.Usb is { Openable: true } u0 && !candidates.Contains(u0)) candidates.Insert(0, u0);
         // interfaces bound to WinUSB first (the most direct way in), then the ones driven by Windows' scanner driver
-        candidates = candidates.OrderBy(u => u.Transport == UsbTransport.WinUsb ? 0 : 1).ToList();
+        // (a Brother lists two vendor interfaces on some models and only one speaks HTTP; on an MFC-J5955DW it is MI_03: try the higher number first)
+        candidates = candidates.OrderBy(u => u.Transport == UsbTransport.WinUsb ? 0 : 1).ThenByDescending(u => u.VendorId == 0x04F9 ? u.InterfaceNumber ?? 0 : 0).ToList();
         if (candidates.Count == 0) { Error = "No USB web-services interface is bound to WinUSB."; return; }
 
         foreach (var iface in candidates)

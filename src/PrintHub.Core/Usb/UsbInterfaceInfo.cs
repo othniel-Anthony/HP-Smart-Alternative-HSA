@@ -18,6 +18,12 @@ public enum UsbHttpKind
     IppUsb,
     /// <summary>HP vendor web-services interface (class FF, subclass 04, protocol 01).</summary>
     HpWebServices,
+    /// <summary>
+    /// Brother's embedded web server over USB: a vendor interface (class FF, subclass FF, protocol FF) bound to WinUSB, speaking plain HTTP. Brother's own launcher
+    /// reaches it through its HttpToUsbBridge. The same class triple is also what Brother's scanner interface reports, so only a WinUSB-bound one counts (the scanner
+    /// interface is bound to Windows' scanner driver).
+    /// </summary>
+    BrotherWebServices,
 }
 
 public sealed record UsbInterfaceInfo(

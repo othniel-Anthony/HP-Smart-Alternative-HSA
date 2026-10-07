@@ -60,6 +60,8 @@ public sealed class AppState
     }
 
     Task? _earlySelect;
+    PrinterStatus? _brotherLast;   // what the last look at a USB Brother showed
+    string? _brotherLastFor;
     Microsoft.UI.Dispatching.DispatcherQueueTimer? _watch;
     string? _fingerprint;
     DateTime _lastSearch = DateTime.UtcNow;
@@ -219,6 +221,20 @@ public sealed class AppState
 
         if (dev.SpoolerName is not null)
             queue = await Task.Run(() => SpoolerPrinters.List().FirstOrDefault(q => q.Name == dev.SpoolerName));
+
+        if (dev.IsBrother && status is not null) BrotherMaintenance.FriendlyInkNames(status);
+
+        // A Brother plugged in by USB with no IPP answer has nothing HSA can reach: ask it in its own language (PJL), as Brother's status monitor does.
+        // Not while it is busy with a maintenance run or while the Windows queue has a job (the printer is busy talking to the driver then: show what was seen last).
+        if (dev.IsBrother && (status is null || status.Supplies.Count == 0) && dev.OnUsb)
+        {
+            if (!PrinterActivity.IsBusy && (queue?.Jobs ?? 0) == 0)
+            {
+                var live = await BrotherMaintenance.ReadLiveAsync(dev);
+                if (live is not null) { _brotherLast = BrotherMaintenance.ToPrinterStatus(dev, live); _brotherLastFor = dev.Name; }
+            }
+            if (_brotherLast is not null && _brotherLastFor == dev.Name) { status = _brotherLast; error = null; }
+        }
 
         if (gen != _statusGeneration || !ReferenceEquals(dev, Current)) return; // a newer refresh/selection won
         Status = status; StatusError = error; Queue = queue;
