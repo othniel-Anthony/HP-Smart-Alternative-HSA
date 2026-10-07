@@ -168,6 +168,7 @@ public static class EpsonMaintenance
         public string Path { get; }
         /// <summary>Remote commands have been sent on this connection and the command to leave remote mode has not.</summary>
         internal volatile bool InRemoteMode;
+        readonly IDisposable _hold = PrinterActivity.Begin();   // HSA's own searches and status requests wait until this connection is closed
         public Port(string path, Stream fs) { Path = path; _fs = fs; lock (OpenPorts) OpenPorts.Add(this); }
 
         /// <summary>Best effort and quick: used when the program is closing or a run failed half way. Never throws.</summary>
@@ -311,6 +312,7 @@ public static class EpsonMaintenance
             LeaveRemoteModeNow();
             lock (OpenPorts) OpenPorts.Remove(this);
             _fs.Dispose();
+            _hold.Dispose();
         }
     }
 

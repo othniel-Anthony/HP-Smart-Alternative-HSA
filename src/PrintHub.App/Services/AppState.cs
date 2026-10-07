@@ -41,7 +41,7 @@ public sealed class AppState
 
         _timer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(20);
-        _timer.Tick += async (_, _) => await RefreshStatusAsync();
+        _timer.Tick += async (_, _) => { if (!PrinterActivity.IsBusy) await RefreshStatusAsync(); };
         _timer.Start();
 
         // A printer plugged in, switched on or added in Windows while HSA is open is noticed within a few seconds (see WatchAsync).
@@ -70,7 +70,7 @@ public sealed class AppState
     /// <summary>Called every few seconds: searches again when the USB / Windows printers changed, and now and then for network printers.</summary>
     async Task WatchAsync()
     {
-        if (Discovering || !SettingsLoaded || _fingerprint is null) return;
+        if (Discovering || !SettingsLoaded || _fingerprint is null || PrinterActivity.IsBusy) return;   // not while a maintenance run has the printer's USB port
         string now;
         try { now = await Task.Run(PrinterDiscovery.Fingerprint); } catch { return; }
         bool changed = now != _fingerprint;

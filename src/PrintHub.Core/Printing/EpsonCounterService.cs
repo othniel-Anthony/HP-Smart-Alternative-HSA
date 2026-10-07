@@ -142,6 +142,7 @@ public static class EpsonCounterService
 
     static async Task<T> WithSessionAsync<T>(PrinterDevice dev, Func<IEpsonControl, Task<T>> work, CancellationToken ct)
     {
+        using var hold = PrinterActivity.Begin();   // HSA's own searches and status requests wait until the printer is free again
         using var stream = EpsonMaintenance.OpenUsbStream(dev, out var path);
         using var d4 = new EpsonD4Session(stream) { Trace = s => Diag.Log("Epson D4 " + (s.Length > 140 ? s[..140] + "…" : s)) };
         Diag.Log($"Epson counters: opening {path}");
