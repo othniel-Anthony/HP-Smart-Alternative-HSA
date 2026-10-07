@@ -379,8 +379,13 @@ public static class EpsonMaintenance
         var epson = PresentPrintInterfaces().Where(p => p.Vendor == vendor && !p.Name.Contains("fax", StringComparison.OrdinalIgnoreCase)).ToList();
         if (epson.Count == 0) return null;
 
+        // the queue's USB port names the physical printer it was installed for: exact, where the name is the same for two printers of one model
+        if (dev.SpoolerPort is { Length: > 0 } qport && ContainerOfPort(qport) is { Length: > 0 } qc
+            && epson.FirstOrDefault(p => string.Equals(p.Container, qc, StringComparison.OrdinalIgnoreCase)) is { Path: not null } exact)
+            return exact.Path;
+
         var byName = epson.Where(p => PrinterDevice.Similar(p.Name, dev.Name)).ToList();
-        if (byName.Count > 0) return byName[0].Path; // the same model plugged in twice: either is as good as the other
+        if (byName.Count > 0) return byName[0].Path; // no queue port to follow: the same model plugged in twice, either is as good as the other
 
         // otherwise follow the Windows queue's USB port to the physical device it was installed for
         if (dev.SpoolerPort is { Length: > 0 } port && ContainerOfPort(port) is { Length: > 0 } container)

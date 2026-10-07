@@ -98,6 +98,16 @@ public sealed class PrinterDevice
         return !brandsDiffer && common.Any(t => t.Count(char.IsDigit) >= 3);
     }
 
+    /// <summary>
+    /// The entry of <paramref name="list"/> that is the same printer as <paramref name="target"/>: same id, else the same name, and only then a similar
+    /// name. The exact name comes first so that two printers of one model (two L3250s) are never mistaken for each other.
+    /// </summary>
+    public static PrinterDevice? FindSame(IEnumerable<PrinterDevice> list, PrinterDevice target)
+    {
+        var all = list as IReadOnlyCollection<PrinterDevice> ?? list.ToList();
+        return all.FirstOrDefault(d => d.Id == target.Id) ?? all.FirstOrDefault(d => d.Name == target.Name) ?? all.FirstOrDefault(d => Similar(d.Name, target.Name));
+    }
+
     /// <summary>Fold another discovery record of the same physical device into this one.</summary>
     public void Merge(PrinterDevice o)
     {

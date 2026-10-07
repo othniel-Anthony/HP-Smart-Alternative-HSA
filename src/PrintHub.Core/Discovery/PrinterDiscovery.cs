@@ -98,16 +98,7 @@ public static class PrinterDiscovery
         }
 
         // 2. Windows print queues
-        foreach (var q in local.Spooler)
-        {
-            if (q.Name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("PORTPROMPT")) continue; // Print to PDF / XPS
-            if (IsFaxQueue(q.Name)) continue;   // an MFP's fax function has its own Windows queue ("Fax - HP ...") that must not stand in for its print queue
-            if (q.Name.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase) || q.Name.Contains("Fax", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("SHRFAX")) continue;
-            var ip = SpoolerPrinters.AddressFromPort(q.Port);
-            var existing = devices.FirstOrDefault(d => (ip is not null && d.Address == ip) || PrinterDevice.Similar(d.Name, q.Name) || PrinterDevice.Similar(d.Name, q.Driver));
-            var rec = new PrinterDevice { Name = q.Name, Manufacturer = q.Driver.Split(' ')[0], Model = q.Name, Address = ip, SpoolerName = q.Name, SpoolerPort = q.Port, SpoolerDriver = q.Driver, SpoolerStatus = q.Status, SpoolerOffline = q.IsOffline };
-            if (existing is not null) existing.Merge(rec); else devices.Add(rec);
-        }
+        MergeQueues(devices, local.Spooler, PrinterPicker.PresentContainers(), PrinterPicker.LiveContainer);
 
         // 3. USB HTTP interfaces (embedded web server over USB)
         foreach (var grp in local.Usb.GroupBy(u => (u.VendorId, u.ProductId, u.ContainerId)))
@@ -136,6 +127,32 @@ public static class PrinterDiscovery
         foreach (var d in devices) if (d.Manufacturer == "") d.Manufacturer = d.Name.Split(' ')[0];
         Timed("USB presence", () => { PrinterPicker.MarkUsb(devices); return 0; });
         return devices.OrderBy(d => d.Name).ToList();
+    }
+
+    /// <summary>
+    /// Folds the Windows print queues into <paramref name="devices"/>. Queues of one model normally are one printer (copies left over from earlier
+    /// plugging), but two queues whose USB ports belong to two printers that are both plugged in right now are two printers (two L3250s): they stay
+    /// two entries. Queues of printers that are not plugged in fold into the first similar entry, as before; the plugged-in ones go first so the
+    /// entry carries a queue that works.
+    /// </summary>
+    internal static void MergeQueues(List<PrinterDevice> devices, IEnumerable<SpoolerPrinter> queues, IReadOnlyCollection<string> presentContainers,
+        Func<string?, IReadOnlyCollection<string>, string?> liveContainer)
+    {
+        var live = new Dictionary<PrinterDevice, string>(ReferenceEqualityComparer.Instance);
+        var ordered = queues.Select(q => (Queue: q, Live: liveContainer(q.Port, presentContainers))).OrderByDescending(x => x.Live is not null).ToList();
+        foreach (var (q, liveC) in ordered)
+        {
+            if (q.Name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("PORTPROMPT")) continue; // Print to PDF / XPS
+            if (IsFaxQueue(q.Name)) continue;   // an MFP's fax function has its own Windows queue ("Fax - HP ...") that must not stand in for its print queue
+            if (q.Name.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase) || q.Name.Contains("Fax", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("SHRFAX")) continue;
+            var ip = SpoolerPrinters.AddressFromPort(q.Port);
+            var existing = devices.FirstOrDefault(d => ((ip is not null && d.Address == ip) || PrinterDevice.Similar(d.Name, q.Name) || PrinterDevice.Similar(d.Name, q.Driver))
+                && !(liveC is not null && live.TryGetValue(d, out var other) && !string.Equals(other, liveC, StringComparison.OrdinalIgnoreCase)));
+            var rec = new PrinterDevice { Name = q.Name, Manufacturer = q.Driver.Split(' ')[0], Model = q.Name, Address = ip, SpoolerName = q.Name, SpoolerPort = q.Port, SpoolerDriver = q.Driver, SpoolerStatus = q.Status, SpoolerOffline = q.IsOffline };
+            var target = existing ?? rec;
+            if (existing is not null) existing.Merge(rec); else devices.Add(rec);
+            if (liveC is not null) live.TryAdd(target, liveC);
+        }
     }
 
     /// <summary>

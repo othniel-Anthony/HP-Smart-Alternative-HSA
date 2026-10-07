@@ -120,7 +120,7 @@ public sealed class AppState
                     found.Add(saved.ToDevice());
 
             // a search HSA started itself must not disturb the printer in use: when nothing about it changed, keep the very same object (and its connection)
-            if (background && Current is not null && found.FirstOrDefault(d => d.Id == Current.Id || PrinterDevice.Similar(d.Name, Current.Name)) is { } same
+            if (background && Current is not null && PrinterDevice.FindSame(found, Current) is { } same
                 && same.Connection == Current.Connection && same.CanScan == Current.CanScan && same.CanPrint == Current.CanPrint && same.OnUsb == Current.OnUsb)
                 found[found.IndexOf(same)] = Current;
 
@@ -134,7 +134,7 @@ public sealed class AppState
         if (_earlySelect is { } early) { _earlySelect = null; try { await early; } catch { } }
 
         // re-select the previously used printer (or the only one)
-        var keep = Current is null ? null : Devices.FirstOrDefault(d => d.Id == Current.Id || PrinterDevice.Similar(d.Name, Current.Name));
+        var keep = Current is null ? null : PrinterDevice.FindSame(Devices, Current);
 
         // A printer that is plugged in by USB and online is the one the user wants to use: pick it without asking. (Until the user picks one by
         // hand, it wins over the remembered printer; afterwards only a printer plugged in since the last search is switched to.)
@@ -143,7 +143,7 @@ public sealed class AppState
         bool switchedAway = false;
         if (usbPick is not null)
         {
-            if (keep is not null && (usbPick.Id == keep.Id || PrinterDevice.Similar(usbPick.Name, keep.Name))) usbPick = keep;   // already on it
+            if (keep is not null && (usbPick.Id == keep.Id || usbPick.Name == keep.Name)) usbPick = keep;   // already on it
             else if (Current is not null && !Connecting) switchedAway = true;
             AppLog.Write($"USB printer chosen automatically: {usbPick.Name}");
         }
