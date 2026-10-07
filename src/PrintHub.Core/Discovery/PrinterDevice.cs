@@ -26,6 +26,12 @@ public sealed class PrinterDevice
     /// <summary>Plugged in by USB at the moment of the search (not just a queue left over from earlier). Set by <see cref="PrinterPicker.MarkUsb"/>.</summary>
     public bool OnUsb { get; set; }
 
+    /// <summary>
+    /// The container id of the physical USB printer this entry stands for (it is the same for everything one printer plugs in: its queue's port, its print interface,
+    /// its web-services interface). It is what ties a queue to the right USB interface when many printers of one model are around. Null when not known.
+    /// </summary>
+    public string? UsbContainer { get; set; }
+
     public UsbInterfaceInfo? Usb { get; set; }
     public List<UsbInterfaceInfo> UsbCandidates { get; set; } = new();
     public string? WiaDeviceId { get; set; }

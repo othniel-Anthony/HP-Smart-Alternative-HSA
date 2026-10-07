@@ -82,25 +82,39 @@ public static class SpoolerPrinters
     public static List<SpoolerPrinter> List()
     {
         const uint LOCAL = 2, CONNECTIONS = 4;
+        const int ERROR_INSUFFICIENT_BUFFER = 122;
+        // The size Windows asks for and the list itself are two calls: a queue added or removed in between (a repair bench with many printers being plugged in) makes the
+        // second call fail with "buffer too small". That used to come back as an empty list, so printers went missing for a search. Ask again with the new size.
         EnumPrinters(LOCAL | CONNECTIONS, null, 2, IntPtr.Zero, 0, out var needed, out _);
-        var result = new List<SpoolerPrinter>();
-        if (needed == 0) return result;
-        var buf = Marshal.AllocHGlobal((int)needed);
-        try
+        if (needed == 0) return new List<SpoolerPrinter>();
+        for (int attempt = 0; attempt < 8; attempt++)
         {
-            if (!EnumPrinters(LOCAL | CONNECTIONS, null, 2, buf, needed, out _, out var count)) return result;
-            var def = GetDefault();
-            int size = Marshal.SizeOf<PRINTER_INFO_2>();
-            for (int i = 0; i < count; i++)
+            uint cb = needed + needed / 4 + 4096;   // room for queues added meanwhile
+            var buf = Marshal.AllocHGlobal((int)cb);
+            try
             {
-                var info = Marshal.PtrToStructure<PRINTER_INFO_2>(buf + i * size);
-                result.Add(new SpoolerPrinter(info.pPrinterName ?? "", info.pPortName ?? "", info.pDriverName ?? "",
-                    info.pLocation ?? "", info.Status, info.Attributes, info.cJobs,
-                    string.Equals(info.pPrinterName, def, StringComparison.OrdinalIgnoreCase)));
+                if (EnumPrinters(LOCAL | CONNECTIONS, null, 2, buf, cb, out var need2, out var count))
+                {
+                    var result = new List<SpoolerPrinter>((int)count);
+                    var def = GetDefault();
+                    int size = Marshal.SizeOf<PRINTER_INFO_2>();
+                    for (int i = 0; i < count; i++)
+                    {
+                        var info = Marshal.PtrToStructure<PRINTER_INFO_2>(buf + i * size);
+                        result.Add(new SpoolerPrinter(info.pPrinterName ?? "", info.pPortName ?? "", info.pDriverName ?? "",
+                            info.pLocation ?? "", info.Status, info.Attributes, info.cJobs,
+                            string.Equals(info.pPrinterName, def, StringComparison.OrdinalIgnoreCase)));
+                    }
+                    return result;
+                }
+                int err = Marshal.GetLastWin32Error();
+                if (err != ERROR_INSUFFICIENT_BUFFER) throw new System.ComponentModel.Win32Exception(err);
+                needed = Math.Max(need2, needed);
             }
+            finally { Marshal.FreeHGlobal(buf); }
+            Thread.Sleep(50);
         }
-        finally { Marshal.FreeHGlobal(buf); }
-        return result;
+        throw new InvalidOperationException("The Windows printer list kept changing while it was being read.");
     }
 
     /// <summary>Extract an IPv4 address from port names such as "IP_192.168.1.5" or "192.168.1.5_1".</summary>

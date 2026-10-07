@@ -45,12 +45,54 @@ public static class PrinterDiscovery
         try { return f(); } finally { Trace?.Invoke($"{what} took {sw.ElapsedMilliseconds} ms"); }
     }
 
+    static async Task<int> TimedAsync(string what, Func<Task> f)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try { await f().ConfigureAwait(false); return 0; } finally { Trace?.Invoke($"{what} took {sw.ElapsedMilliseconds} ms"); }
+    }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, PrinterDevice? Found)> ProbeCache = new();
+
+    /// <summary>
+    /// A Windows queue whose port is an IP address belongs to a network printer, but Bonjour does not always find that printer (with dozens of identical printers it
+    /// often loses some). Such a queue would have no ink levels, firmware, serial number or web page, so the address is asked directly. Answers are remembered
+    /// (a printer that did not answer for two minutes, one that did for half an hour); the search never waits more than a few seconds for them.
+    /// </summary>
+    internal static async Task EnrichByAddressAsync(List<PrinterDevice> devices, CancellationToken ct, Func<string, CancellationToken, Task<PrinterDevice?>>? probe = null)
+    {
+        probe ??= (ip, c) => ProbeAddressAsync(ip, c);
+        var todo = devices.Where(d => d.Address is { Length: > 0 } && d.IppUri is null && d.EsclUri is null && d.SpoolerName is not null).ToList();
+        if (todo.Count == 0) return;
+        static void Apply(PrinterDevice d, PrinterDevice p) { d.IppUri ??= p.IppUri; d.EsclUri ??= p.EsclUri; d.WebUri ??= p.WebUri; }
+        var gate = new SemaphoreSlim(8);   // not disposed: stragglers still use it after the search has moved on
+        var all = Task.WhenAll(todo.Select(async d =>
+        {
+            var ip = d.Address!;
+            if (ProbeCache.TryGetValue(ip, out var c) && DateTime.UtcNow - c.At < (c.Found is null ? TimeSpan.FromMinutes(2) : TimeSpan.FromMinutes(30)))
+            {
+                if (c.Found is not null) Apply(d, c.Found);
+                return;
+            }
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var found = await probe(ip, ct).ConfigureAwait(false);
+                ProbeCache[ip] = (DateTime.UtcNow, found);
+                if (found is not null) Apply(d, found);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { ProbeCache[ip] = (DateTime.UtcNow, null); }
+            finally { gate.Release(); }
+        }));
+        await Task.WhenAny(all, Task.Delay(TimeSpan.FromSeconds(6), ct)).ConfigureAwait(false);   // the stragglers finish in the background and are remembered for the next search
+    }
+
     public static async Task<List<PrinterDevice>> DiscoverAsync(CancellationToken ct = default)
     {
         var total = System.Diagnostics.Stopwatch.StartNew();
         var mdnsTask = Task.Run(async () => { var sw = System.Diagnostics.Stopwatch.StartNew(); try { return await MdnsClient.BrowseAsync(ct: ct); } finally { Trace?.Invoke($"Bonjour search took {sw.ElapsedMilliseconds} ms"); } }, ct);
         var local = await Task.Run(() => (
-            Spooler: Timed("Windows printer list", () => SafeList(SpoolerPrinters.List)),
+            Spooler: Timed("Windows printer list", () => SafeList(() => Retry(SpoolerPrinters.List))),
             Usb: Timed("USB scan", () => SafeList(() => UsbDeviceScanner.FindHttpInterfaces(true).ToList())),
             Wia: Timed("WIA scanner list", () => SafeList(() => WiaProvider?.Invoke() ?? new()))), ct);
 
@@ -101,20 +143,7 @@ public static class PrinterDiscovery
         MergeQueues(devices, local.Spooler, PrinterPicker.PresentContainers(), PrinterPicker.LiveContainer);
 
         // 3. USB HTTP interfaces (embedded web server over USB)
-        foreach (var grp in local.Usb.GroupBy(u => (u.VendorId, u.ProductId, u.ContainerId)))
-        {
-            var first = grp.OrderByDescending(u => u.Openable).First();
-            // an interface can carry a driver's label ("HP Smart Universal Printing(REST)") instead of the printer's model: prefer one that names the model
-            var named = grp.OrderByDescending(u => u.Openable).FirstOrDefault(u => !IsGenericInterfaceName(CleanInterfaceName(u.Name))) ?? first;
-            var modelName = CleanInterfaceName(named.Name);
-            var rec = new PrinterDevice
-            {
-                Name = modelName, Manufacturer = first.VendorId == 0x03F0 ? "HP" : "", Model = modelName,
-                Usb = grp.FirstOrDefault(u => u.Openable), UsbCandidates = grp.ToList(),
-            };
-            var existing = devices.FirstOrDefault(d => PrinterDevice.Similar(d.Name, modelName) || PrinterDevice.Similar(d.Model, modelName));
-            if (existing is not null) existing.Merge(rec); else devices.Add(rec);
-        }
+        MergeUsb(devices, local.Usb);
 
         // 4. WIA scanners
         foreach (var w in local.Wia)
@@ -123,6 +152,8 @@ public static class PrinterDiscovery
             if (existing is not null) existing.WiaDeviceId ??= w.Id;
             else devices.Add(new PrinterDevice { Name = w.Name, Model = w.Name, WiaDeviceId = w.Id });
         }
+
+        await TimedAsync("Asking queues by address", () => EnrichByAddressAsync(devices, ct)).ConfigureAwait(false);
 
         foreach (var d in devices) if (d.Manufacturer == "") d.Manufacturer = d.Name.Split(' ')[0];
         Timed("USB presence", () => { PrinterPicker.MarkUsb(devices); return 0; });
@@ -147,11 +178,39 @@ public static class PrinterDiscovery
             if (q.Name.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase) || q.Name.Contains("Fax", StringComparison.OrdinalIgnoreCase) && q.Port.StartsWith("SHRFAX")) continue;
             var ip = SpoolerPrinters.AddressFromPort(q.Port);
             var existing = devices.FirstOrDefault(d => ((ip is not null && d.Address == ip) || PrinterDevice.Similar(d.Name, q.Name) || PrinterDevice.Similar(d.Name, q.Driver))
-                && !(liveC is not null && live.TryGetValue(d, out var other) && !string.Equals(other, liveC, StringComparison.OrdinalIgnoreCase)));
+                && !(liveC is not null && live.TryGetValue(d, out var other) && !string.Equals(other, liveC, StringComparison.OrdinalIgnoreCase))
+                && !(ip is not null && d.Address is not null && d.Address != ip));   // a queue on another address is another printer, whatever it is called
             var rec = new PrinterDevice { Name = q.Name, Manufacturer = q.Driver.Split(' ')[0], Model = q.Name, Address = ip, SpoolerName = q.Name, SpoolerPort = q.Port, SpoolerDriver = q.Driver, SpoolerStatus = q.Status, SpoolerOffline = q.IsOffline };
             var target = existing ?? rec;
             if (existing is not null) existing.Merge(rec); else devices.Add(rec);
-            if (liveC is not null) live.TryAdd(target, liveC);
+            if (liveC is not null) { live.TryAdd(target, liveC); target.UsbContainer ??= liveC; }
+        }
+    }
+
+    /// <summary>
+    /// Folds the USB web-services interfaces (what gives ink levels, firmware, serial number and the printer's web page over USB) into <paramref name="devices"/>.
+    /// The interface of one physical printer goes to the entry of that printer: the one whose queue's USB port has the same container id. Matching by name
+    /// alone put every interface on the first entry of the model, so with many printers of one model only one of them ever had supplies and a web page.
+    /// </summary>
+    internal static void MergeUsb(List<PrinterDevice> devices, IEnumerable<UsbInterfaceInfo> usb)
+    {
+        foreach (var grp in usb.GroupBy(u => (u.VendorId, u.ProductId, u.ContainerId)))
+        {
+            var first = grp.OrderByDescending(u => u.Openable).First();
+            // an interface can carry a driver's label ("HP Smart Universal Printing(REST)") instead of the printer's model: prefer one that names the model
+            var named = grp.OrderByDescending(u => u.Openable).FirstOrDefault(u => !IsGenericInterfaceName(CleanInterfaceName(u.Name))) ?? first;
+            var modelName = CleanInterfaceName(named.Name);
+            var rec = new PrinterDevice
+            {
+                Name = modelName, Manufacturer = first.VendorId == 0x03F0 ? "HP" : "", Model = modelName,
+                Usb = grp.FirstOrDefault(u => u.Openable), UsbCandidates = grp.ToList(), UsbContainer = first.ContainerId,
+            };
+            string? container = first.ContainerId;
+            // 1. the entry of this very printer; 2. an entry of the model that is not tied to another printer; otherwise a new entry (a printer without a queue)
+            var existing = container is { Length: > 0 } ? devices.FirstOrDefault(d => string.Equals(d.UsbContainer, container, StringComparison.OrdinalIgnoreCase)) : null;
+            existing ??= devices.FirstOrDefault(d => d.UsbContainer is null && (PrinterDevice.Similar(d.Name, modelName) || PrinterDevice.Similar(d.Model, modelName)));
+            if (existing is not null) { existing.Merge(rec); existing.UsbContainer ??= container; }
+            else devices.Add(rec);
         }
     }
 
@@ -212,4 +271,14 @@ public static class PrinterDiscovery
         return d;
     }
     static List<T> SafeList<T>(Func<List<T>> f) { try { return f(); } catch { return new(); } }
+    /// <summary>A list that failed once (the spooler was busy adding a queue) is asked for again before the search settles for an empty one.</summary>
+    static List<T> Retry<T>(Func<List<T>> f)
+    {
+        Exception? last = null;
+        for (int i = 0; i < 3; i++)
+        {
+            try { return f(); } catch (Exception ex) { last = ex; Thread.Sleep(150); }
+        }
+        throw last!;
+    }
 }

@@ -69,7 +69,9 @@ public static class PrinterTools
         {
             // every interface Windows reports for this printer, with the driver each one is bound to: shows why a USB web page or ink levels are unavailable
             foreach (var u in UsbDeviceScanner.Scan(presentOnly: true)
-                         .Where(u => dev.UsbCandidates.Any(c => c.VendorId == u.VendorId && c.ProductId == u.ProductId) || PrinterDevice.Similar(u.Name, dev.Name))
+                         .Where(u => dev.UsbContainer is { Length: > 0 } c0
+                             ? string.Equals(u.ContainerId, c0, StringComparison.OrdinalIgnoreCase)   // one physical printer: not the other printers of the same model
+                             : dev.UsbCandidates.Any(c => c.VendorId == u.VendorId && c.ProductId == u.ProductId) || PrinterDevice.Similar(u.Name, dev.Name))
                          .Where(u => !dev.UsbCandidates.Any(c => c.InstanceId == u.InstanceId)))
                 sb.AppendLine($"USB (other):   {u.Describe()}");
         }
