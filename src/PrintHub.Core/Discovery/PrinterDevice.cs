@@ -78,8 +78,14 @@ public sealed class PrinterDevice
 
     static readonly Regex BrandRx = new(@"\b(hp|hewlett|epson|canon|brother|lexmark|samsung|xerox|ricoh|kyocera|oki|konica|dell|sharp|pantum)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>
+    /// The mark Windows adds to a second queue of the same printer: "EPSON L3250 Series (Copy 1)". (Also "(Kopie 1)", "(Copie 2)", "(redirected 3)": a trailing word and a number in brackets.)
+    /// It says nothing about the printer. It used to count as a shared word, so an Epson "(Copy 1)" matched an HP "(Copy 1)" and the new Epson turned up under the HP's name.
+    /// </summary>
+    static readonly Regex QueueSuffixRx = new(@"\s*\(\s*\p{L}+\s+\d+\s*\)\s*$", RegexOptions.Compiled);
+
     public static HashSet<string> Tokens(string s) =>
-        Regex.Split(s.ToLowerInvariant(), "[^a-z0-9]+").Where(t => t.Length > 0 && !Stop.Contains(t))
+        Regex.Split(QueueSuffixRx.Replace(s, "").ToLowerInvariant(), "[^a-z0-9]+").Where(t => t.Length > 0 && !Stop.Contains(t))
             .SelectMany(SplitJoinedModels)
             .Select(t => Aliases.TryGetValue(t, out var full) ? full : t).ToHashSet();
 
@@ -96,7 +102,8 @@ public sealed class PrinterDevice
         var ta = Tokens(a); var tb = Tokens(b);
         if (ta.Count == 0 || tb.Count == 0) return false;
         var common = ta.Intersect(tb).ToList();
-        if (common.Count == 0 || !common.Any(t => t.Any(char.IsDigit))) return false;
+        // a model carries a digit-bearing word of its own ("l3250", "580", "m282"); a lone "1" or "2" is a copy number or a count, not a model
+        if (common.Count == 0 || !common.Any(t => t.Length >= 2 && t.Any(char.IsDigit))) return false;
         if (common.Count >= Math.Min(ta.Count, tb.Count) * 0.6) return true;
 
         // Same model number (at least three digits, e.g. 1110 or 16650) and not two different brands: one physical printer

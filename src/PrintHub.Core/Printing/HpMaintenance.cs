@@ -110,7 +110,38 @@ public static class HpMaintenance
         ["sizeMismatchInTray"] = "The paper in the tray is not the size the printer expects.",
         ["shuttingDown"] = "The printer is shutting down.",
         ["cancelJob"] = "The printer is cancelling a job. Try again in a moment.",
+        ["insertOrCloseTray"] = "A paper tray is open or missing. Close or insert it and try again.",
+        ["insertOrCloseTray2"] = "The second paper tray is open or missing. Close or insert it and try again.",
+        ["cartridgeMissing"] = "An ink cartridge is missing. Insert it and try again.",
+        ["incorrectCartridge"] = "The printer does not accept one of its ink cartridges. Check the cartridges and try again.",
+        ["missingPrintHead"] = "The printhead is missing. Check the printer and try again.",
+        ["inkTooLowToPrime"] = "There is too little ink to start. Replace the empty cartridge and try again.",
+        ["wasteMarkerCollectorFull"] = "The printer says its waste ink collector is full. It needs service before it prints.",
+        ["wasteMarkerCollectorFullPrompt"] = "The printer is asking about its waste ink collector on its own screen. Answer it there, then try again.",
+        ["scannerError"] = "The scanner reports an error. Switch the printer off and on, then try again.",
+        ["manuallyFeed"] = "The printer is waiting for a sheet to be fed by hand.",
+        ["mediaTooShortToAutoDuplex"] = "The paper is too short for two-sided printing.",
+        ["printBarStall"] = "The print carriage is stuck. Open the printer, clear anything in its way and try again.",
     };
+
+    /// <summary>The printer is busy with something other than printing but still busy: a scan or a fax.</summary>
+    static readonly HashSet<string> BusyCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "processing", "scanProcessing", "faxProcessing", "faxSending", "faxReceiving", "faxDialing", "faxConnecting", "faxBlocking",
+    };
+
+    /// <summary>
+    /// What a list of status categories from the printer means for a job: a problem (its own name), "processing", or "ready". A printer lists several categories at once and
+    /// keeps harmless ones next to "ready" (inPowerSave, cartridgeVeryLow, wasteMarkerCollectorAlmostFull, an output bin that is closed...): waiting for "ready" to be the
+    /// FIRST one made a job look as if it never finished.
+    /// </summary>
+    public static string ClassifyCategories(IReadOnlyList<string> cats)
+    {
+        if (cats.Count == 0) return "ready";
+        if (cats.FirstOrDefault(c => StatusProblems.ContainsKey(c)) is { } problem) return problem;
+        if (cats.Any(c => BusyCategories.Contains(c))) return "processing";
+        return "ready";
+    }
 
     /// <summary>"ready", "processing" or another category from the printer's product status; null when it cannot be read.</summary>
     public static async Task<string?> GetStatusCategoryAsync(HttpClient http, Uri baseUri, CancellationToken ct)
@@ -120,7 +151,8 @@ public static class HpMaintenance
             var xml = await http.GetStringAsync(new Uri(baseUri, StatusPath), ct).ConfigureAwait(false);
             var cats = XDocument.Parse(xml).Descendants().Where(e => e.Name.LocalName == "StatusCategory").Select(e => e.Value.Trim()).Where(v => v.Length > 0).ToList();
             if (cats.Count == 0) return null;
-            return cats.FirstOrDefault(c => StatusProblems.ContainsKey(c)) ?? (cats.Contains("processing") ? "processing" : cats[0]);
+            Diag.Log("HP: status categories [" + string.Join(", ", cats) + "]");
+            return ClassifyCategories(cats);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Xml.XmlException) { return null; }
     }
@@ -214,7 +246,7 @@ public static class HpMaintenance
             Diag.Log($"HP: status {cat ?? "(no answer)"} after {(DateTime.UtcNow - started).TotalSeconds:0} s");
             if (ProblemFor(cat) is { } p) throw new InvalidOperationException(p);
 
-            if (cat == "processing") { sawWork = true; readyInARow = 0; progress?.Report("The printer is working…"); continue; }
+            if (cat == "processing") { sawWork = true; readyInARow = 0; progress?.Report($"The printer is working… ({(int)(DateTime.UtcNow - started).TotalSeconds} s)"); continue; }
             if (cat == "ready")
             {
                 readyInARow++;
