@@ -40,7 +40,7 @@ public static class PrinterTools
     public static async Task PrintBundledTestPageAsync(PrinterDevice dev, PrinterSession? session, PrintRoute route = PrintRoute.Auto, int copies = 1, CancellationToken ct = default)
     {
         var file = ExtractBundledTestPage();
-        await PrintService.PrintFileAsync(dev, session, file, new PrintOptions { Route = route, Color = true, Scale = ScaleMode.FitToPage, Quality = PrintQuality.Normal, Copies = Math.Clamp(copies, 1, MaxTestPageCopies) }, ct);
+        await PrintService.PrintFileAsync(dev, session, file, new PrintOptions { Route = route, Color = true, Scale = ScaleMode.FitToPage, Quality = PrintQuality.Normal, Copies = Math.Clamp(copies, 1, MaxTestPageCopies), PreferDirectIpp = true }, ct);
     }
 
     public static async Task IdentifyAsync(PrinterSession session, CancellationToken ct = default)

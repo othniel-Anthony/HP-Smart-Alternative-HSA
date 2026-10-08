@@ -36,6 +36,12 @@ public sealed class PrintOptions
     /// <summary>No white margin around the image.</summary>
     public bool Borderless { get; set; }
     public PrintRoute Route { get; set; } = PrintRoute.Auto;
+    /// <summary>
+    /// With the Automatic route, send the document straight to a printer that takes it over IPP (PDF, or JPEG) even when a Windows queue exists. The printer then makes the
+    /// copies itself. Through the driver, Windows redoes the whole page for every copy: measured on a real Epson L3250 queue 1.5 s per copy and on an HP OfficeJet Pro 7740
+    /// queue 3.4 s per copy, so 20 copies hold the next job up for 30 to 70 seconds. If the printer refuses, nothing was printed and the driver route still runs.
+    /// </summary>
+    public bool PreferDirectIpp { get; set; }
     /// <summary>Windows route only: write the output to this file instead of paper (works with "Microsoft Print to PDF").</summary>
     public string? PrintToFilePath { get; set; }
 

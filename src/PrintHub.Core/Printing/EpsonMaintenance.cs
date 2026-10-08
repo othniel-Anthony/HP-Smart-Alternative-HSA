@@ -192,6 +192,12 @@ public static class EpsonMaintenance
         public TimeSpan StartDelay { get; init; } = TimeSpan.FromMilliseconds(1500);
         public TimeSpan PollEvery { get; init; } = TimeSpan.FromSeconds(1);
         public TimeSpan NoBusyGrace { get; init; } = TimeSpan.FromSeconds(10);
+        /// <summary>
+        /// A job that ends with the end-of-page signal (the nozzle check) is not ended before this long, and not before the printer has been idle three polls in a row.
+        /// The signal pushes the sheet out: sent while the pattern was still being drawn (the printer can look idle for a moment between feeding the paper and printing),
+        /// it ejects a blank or half-printed sheet.
+        /// </summary>
+        public TimeSpan MinBeforeEndPage { get; init; } = TimeSpan.FromSeconds(8);
         public TimeSpan ErrorGrace { get; init; } = TimeSpan.FromSeconds(15);
         public TimeSpan ActivityWindow { get; init; } = TimeSpan.FromSeconds(9);
 
@@ -234,7 +240,9 @@ public static class EpsonMaintenance
                 if (expectActivity && !sawBusy && DateTime.UtcNow - started > ActivityWindow) { last = NoActivity; break; }
                 idleInARow = idle ? idleInARow + 1 : 0;
                 // idle counts only once the printer has been seen working; a printer that never shows as busy is given a grace period, then released
-                if (idleInARow >= 2 && (sawBusy || DateTime.UtcNow - started > NoBusyGrace)) break;
+                bool calm = idleInARow >= (endPage ? 3 : 2);
+                bool longEnough = !endPage || DateTime.UtcNow - started >= MinBeforeEndPage || DateTime.UtcNow - started >= NoBusyGrace;
+                if (calm && longEnough && (sawBusy || DateTime.UtcNow - started > NoBusyGrace)) break;
 
                 // "00" is the printer's error state (no paper, paper jam, ink problem...). Waiting longer will not fix it.
                 if (code == "00") { errorSince ??= DateTime.UtcNow; if (DateTime.UtcNow - errorSince > ErrorGrace) break; }

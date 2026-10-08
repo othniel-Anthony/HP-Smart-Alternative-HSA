@@ -36,21 +36,27 @@ public static class PrintService
 
         // Over a USB cable the Windows driver has to turn the PDF into a huge raster image and push it through the cable, which can
         // take a minute. A printer that has an IPP-over-USB session and takes PDF directly gets the file itself instead (what HP Smart
-        // does). If it refuses, nothing was printed and the driver route below still runs.
-        if (o.Route == PrintRoute.Auto && route == PrintRoute.WindowsDriver && session is { ViaUsb: true, Ipp: { } usbIpp }
-            && src.OriginalMime == "application/pdf" && string.IsNullOrEmpty(o.PrintToFilePath))
+        // does). If it refuses, nothing was printed and the driver route below still runs. Callers that ask for it (the colour test page)
+        // get the same on any connection, and for printers that only take JPEG: the printer makes the copies instead of the driver.
+        if (o.Route == PrintRoute.Auto && route == PrintRoute.WindowsDriver && session?.Ipp is { } directIpp
+            && (o.PreferDirectIpp || (session.ViaUsb && src.OriginalMime == "application/pdf")) && string.IsNullOrEmpty(o.PrintToFilePath))
         {
-            bool takesPdf = false;
-            try { takesPdf = (await usbIpp.GetStatusAsync(ct)).SupportsPdf; } catch (Exception ex) when (ex is not OperationCanceledException) { Diag.Log("Print: could not ask the printer about PDF support over USB: " + ex.Message); }
-            if (takesPdf)
+            bool accepts = false;
+            try
+            {
+                var st = await directIpp.GetStatusAsync(ct);
+                accepts = st.SupportsPdf || (o.PreferDirectIpp && st.SupportsJpeg);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException) { Diag.Log("Print: could not ask the printer about its formats over IPP: " + ex.Message); }
+            if (accepts)
             {
                 try
                 {
-                    await PrintViaIppAsync(usbIpp, src, o, ct);
-                    Diag.Log($"Print: PDF sent straight to the printer over USB in {sw.ElapsedMilliseconds} ms");
+                    await PrintViaIppAsync(directIpp, src, o, ct);
+                    Diag.Log($"Print: sent straight to the printer ({(session.ViaUsb ? "over USB" : "over the network")}) in {sw.ElapsedMilliseconds} ms");
                     return;
                 }
-                catch (IppException ex) { Diag.Log($"Print: the printer refused the PDF over USB ({ex.Message}); using the Windows driver"); }
+                catch (Exception ex) when (ex is IppException or InvalidOperationException) { Diag.Log($"Print: the printer refused the direct job ({ex.Message}); using the Windows driver"); }
             }
         }
 
