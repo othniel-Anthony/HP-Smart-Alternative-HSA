@@ -206,10 +206,13 @@ internal sealed class EpsonD4Session : IDisposable
         await RecvAsync(1200, ct).ConfigureAwait(false);
 
         await SendAsync(CtrlSocket, CtrlSocket, frame, 8, ct).ConfigureAwait(false);
+        int silent = 0;
         for (int i = 0; i < tries; i++)
         {
             var p = await RecvAsync(2000, ct).ConfigureAwait(false);
             if (p is { Psid: CtrlSocket } && p.Value.Payload.Length > 0) return p.Value.Payload;
+            // nothing at all for four tries in a row (eight seconds): a printer that is going to answer has started by then
+            if (p is null) { if (++silent >= 4) break; } else silent = 0;
         }
         return null;
     }

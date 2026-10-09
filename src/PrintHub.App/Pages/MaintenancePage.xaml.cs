@@ -34,7 +34,7 @@ public sealed partial class MaintenancePage : Page
         else Notice.IsOpen = false;
 
         bool can = usb && !_busy;
-        foreach (var b in new Control[] { NozzleButton, CleanMenuButton, ResetButton }) b.IsEnabled = can;
+        foreach (var b in new Control[] { NozzleButton, CleanMenuButton, ResetButton, EjectButton }) b.IsEnabled = can;
         bool win = d?.SpoolerName is not null;
         DriverButton.IsEnabled = QueueButton.IsEnabled = win;
 
@@ -55,22 +55,41 @@ public sealed partial class MaintenancePage : Page
         try
         {
             using var cts = new CancellationTokenSource(timeout ?? TimeSpan.FromMinutes(6));
-            // A reply from the printer proves the USB link works before anything is sent that uses ink.
+            _cts = cts; _stopped = false; StopButton.Visibility = Visibility.Visible;
+            // A reply from the printer proves the USB link works before anything is sent that uses ink, and its status says whether it is ready for a command.
             // (Reset skips this: a printer that is stuck may not answer, and that is exactly when you want to reset it.)
+            if (checkLinkFirst) EpsonMaintenance.RequireQuietQueue(dev);   // before anything is sent: the status request below resets the printer's input too
             var status = checkLinkFirst ? await EpsonMaintenance.QueryStatusAsync(dev, cts.Token) : "";
             if (status is null) throw new InvalidOperationException("The printer did not answer on its USB port. Check that it is on and not busy, then try again.");
+            if (checkLinkFirst && status is not ("03" or "04" or "00"))
+            {
+                await Task.Delay(2000, cts.Token);   // a printer that has only just finished a page reports busy for a moment
+                status = await EpsonMaintenance.QueryStatusAsync(dev, cts.Token);
+            }
+            if (checkLinkFirst) EpsonMaintenance.ThrowIfNotReady(status);
             ResultText.Text = await work(cts.Token);
             App.Window.Toast(ResultText.Text, InfoBarSeverity.Success);
         }
-        catch (OperationCanceledException) { ResultText.Text = "The printer took too long to answer."; }
+        catch (OperationCanceledException)
+        {
+            ResultText.Text = _stopped
+                ? "Stopped waiting. The printer may still be working. If it stays busy and does not answer, switch it off and on."
+                : "The printer took too long to answer. If it stays busy, switch it off and on.";
+        }
         catch (Exception ex)
         {
             AppLog.Write("Epson maintenance: " + ex);
             ResultText.Text = "";
             await Ui.MessageAsync(XamlRoot, "That didn't work", ex.Message);
         }
-        finally { _busy = false; Ring.IsActive = false; Update(); }
+        finally { _busy = false; Ring.IsActive = false; StopButton.Visibility = Visibility.Collapsed; _cts = null; Update(); }
     }
+
+    CancellationTokenSource? _cts;
+    bool _stopped;
+
+    /// <summary>End the wait for the printer. Leaving remote mode (without a reset, so a cleaning in progress carries on) is done by the command that was waiting.</summary>
+    void Stop_Click(object sender, RoutedEventArgs e) { _stopped = true; _cts?.Cancel(); }
 
     async void Nozzle_Click(object sender, RoutedEventArgs e) =>
         await RunAsync("Printing the nozzle check. Please wait until the page is out…", async ct =>
@@ -78,6 +97,18 @@ public sealed partial class MaintenancePage : Page
             await EpsonMaintenance.NozzleCheckAsync(App.State.Current!, ct);
             return "Nozzle check finished. Hold the page up to the light: every line should be complete.";
         });
+
+    async void Eject_Click(object sender, RoutedEventArgs e)
+    {
+        bool ok = await Ui.ConfirmAsync(XamlRoot, "Push out a stuck sheet?",
+            "HSA sends the printer the signal that ends a page, so a sheet that stayed inside (for example after a stopped nozzle check) comes out. Nothing else is sent: no reset, no cleaning.", "Push out");
+        if (!ok) return;
+        await RunAsync("Pushing the sheet out…", async ct =>
+        {
+            await EpsonMaintenance.EjectSheetAsync(App.State.Current!, ct);
+            return "The signal was sent. If the sheet is still inside, switch the printer off and on, and pull it out gently.";
+        }, checkLinkFirst: false);   // a printer with a sheet stuck in it may not answer a status request
+    }
 
     async void Clean_Click(object sender, RoutedEventArgs e)
     {

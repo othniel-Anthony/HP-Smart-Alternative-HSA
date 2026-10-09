@@ -30,6 +30,8 @@
               </DropDownButton.Flyout>
             </DropDownButton>
             <CheckBox x:Name="CheckAfter" Content="Print a nozzle check afterwards" IsChecked="True" VerticalAlignment="Center" />
+            <Button x:Name="EjectButton" Click="Eject_Click" Content="Push out a stuck sheet" AutomationProperties.Name="Push out a stuck sheet"
+                    ToolTipService.ToolTip="Sends the printer the signal that ends a page, so a sheet that stayed inside (for example after a stopped nozzle check) comes out. Nothing else is sent." />
           </StackPanel>
         </StackPanel>
       </Border>
@@ -79,6 +81,7 @@
 
       <StackPanel Orientation="Horizontal" Spacing="12">
         <ProgressRing x:Name="Ring" IsActive="False" Width="22" Height="22" />
+        <Button x:Name="StopButton" Content="Stop waiting" Click="Stop_Click" Visibility="Collapsed" VerticalAlignment="Center" AutomationProperties.Name="Stop waiting" />
         <TextBlock x:Name="ResultText" TextWrapping="Wrap" IsTextSelectionEnabled="True" VerticalAlignment="Center" MaxWidth="700" />
       </StackPanel>
     </StackPanel>

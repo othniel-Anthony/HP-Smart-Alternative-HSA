@@ -107,11 +107,13 @@ public static class EpsonCounterService
 
     public static async Task<EpsonAnalysis> AnalyzeAsync(PrinterDevice dev, EpsonDatabase db, CancellationToken ct = default)
     {
+        EpsonMaintenance.RequireQuietQueue(dev);
         return await WithSessionAsync(dev, ctrl => AnalyzeCoreAsync(ctrl, dev.Name, db, ct), ct).ConfigureAwait(false);
     }
 
     public static async Task<EpsonResetResult> ResetAsync(PrinterDevice dev, EpsonDatabase db, IProgress<string>? progress = null, CancellationToken ct = default)
     {
+        EpsonMaintenance.RequireQuietQueue(dev);
         return await WithSessionAsync(dev, async ctrl =>
         {
             var a = await AnalyzeCoreAsync(ctrl, dev.Name, db, ct).ConfigureAwait(false);
@@ -174,10 +176,12 @@ public static class EpsonCounterService
 
     internal static async Task<int?> ReadCellAsync(IEpsonControl ctrl, EpsonModelSpec spec, int address, CancellationToken ct)
     {
+        int silent = 0;
         for (int attempt = 0; attempt < 3; attempt++)
         {
             var reply = await ctrl.RequestAsync(EpsonCtrl.ReadFrame(spec.ReadKeyBytes, address), ct).ConfigureAwait(false);
             if (EpsonCtrl.ParseRead(reply) is { } r && r.Address == address) return r.Value;
+            if (reply is null && ++silent >= 2) break;   // a printer that says nothing twice is busy: asking a third time only adds half a minute
         }
         return null;
     }
@@ -197,6 +201,8 @@ public static class EpsonCounterService
         var idReply = await ctrl.RequestAsync(EpsonCtrl.DeviceIdFrame(), ct).ConfigureAwait(false);
         var reported = EpsonCtrl.ParseModel(idReply);
         Diag.Log($"Epson counters: printer reports model '{reported}', Windows name '{deviceName}'");
+        if (idReply is null)
+            return new EpsonAnalysis { DeviceName = deviceName, Problem = "The printer did not answer. It is probably busy (printing, cleaning) or in an error state: let it finish, or switch it off and on, then try again. Nothing was changed." };
 
         EpsonAnalysis Fail(string problem, EpsonModelSpec? spec = null, string? key = null) =>
             new() { DeviceName = deviceName, ReportedModel = reported, Spec = spec, ModelKey = key, Problem = problem };

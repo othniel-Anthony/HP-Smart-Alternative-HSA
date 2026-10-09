@@ -86,8 +86,49 @@ public static class EpsonMaintenance
         return end > i ? text[(i + 3)..end] : null;
     }
 
+    /// <summary>
+    /// Refuses to send a printing command to a printer whose own status says it is not ready for one. A command sent to a printer that is printing, cleaning or in an error
+    /// state is not carried out and can leave it busy until it is switched off and on. 04 is idle and 03 "waiting" (also ready); 00 is the printer's error state.
+    /// </summary>
+    public static void ThrowIfNotReady(string? status)
+    {
+        if (status is null or "03" or "04") return;
+        if (status == "00")
+            throw new InvalidOperationException("The printer reports an error (status 00): paper out, a jam, an open cover, ink or a counter that needs service. Fix that, switch the printer off and on, then try again.");
+        throw new InvalidOperationException($"The printer is busy (status {status}): it is printing or working on something. Wait until it has finished, then try again. If it stays busy, switch it off and on.");
+    }
+
+    /// <summary>
+    /// The Windows queue of this printer is printing or has jobs waiting. A maintenance command starts by resetting the printer's input, which cuts a job it is in the middle
+    /// of receiving and leaves it busy: refused with a plain message instead.
+    /// </summary>
+    public static void RequireQuietQueue(PrinterDevice dev)
+    {
+        if (dev.SpoolerName is null) return;
+        SpoolerPrinter? q;
+        try { q = SpoolerPrinters.List().FirstOrDefault(x => x.Name == dev.SpoolerName); } catch { return; }   // cannot look: do not block
+        if (q is not null && IsQueueBusy(q))
+            throw new InvalidOperationException($"{dev.Name} is printing or has {Math.Max(1, q.Jobs)} job(s) waiting in Windows. Let it finish first, or use “Reset the printer” to clear the queue, then try again.");
+    }
+
+    /// <summary>Jobs in the queue, or Windows reporting the printer as printing, busy, processing, initialising or warming up.</summary>
+    public static bool IsQueueBusy(SpoolerPrinter q) => q.Jobs > 0 || (q.Status & (0x100 | 0x200 | 0x400 | 0x4000 | 0x8000 | 0x10000)) != 0;
+
+    /// <summary>
+    /// Pushes out a sheet that is inside the printer (for example after a nozzle check was stopped before its sheet came out): the carriage return and form feed that end a page.
+    /// It sends nothing else: no reset, no remote mode, so it cannot cut a page or a cleaning in progress.
+    /// </summary>
+    public static async Task EjectSheetAsync(PrinterDevice dev, CancellationToken ct = default)
+    {
+        RequireQuietQueue(dev);
+        using var port = OpenPort(dev);
+        Diag.Log($"Epson: pushing a sheet out of '{dev.Name}' via {port.Path}");
+        await port.SendAsync(EndOfPage(), ct).ConfigureAwait(false);
+    }
+
     public static async Task NozzleCheckAsync(PrinterDevice dev, CancellationToken ct = default)
     {
+        RequireQuietQueue(dev);
         using var port = OpenPort(dev);
         Diag.Log($"Epson: nozzle check on '{dev.Name}' via {port.Path}");
         ThrowIfError(await port.RunAsync(BuildNozzleCheck(), ct, TimeSpan.FromMinutes(3), endPage: true).ConfigureAwait(false), "the nozzle check");
@@ -101,6 +142,7 @@ public static class EpsonMaintenance
         IProgress<string>? progress = null, CancellationToken ct = default, bool power = false)
     {
         if (power) cycles = 1; // a power flush is already the strongest single step; it is never repeated automatically
+        RequireQuietQueue(dev);
         Diag.Log($"Epson: head cleaning ({which}{(power ? ", POWER" : "")}, {cycles} cycle(s)) on '{dev.Name}'");
         await CleanCyclesAsync(() => OpenPort(dev), which, Math.Clamp(cycles, 1, 3), TimeSpan.FromSeconds(4), TimeSpan.FromMinutes(power ? 10 : 5), progress, ct, power).ConfigureAwait(false);
         if (nozzleCheckAfter)
@@ -130,12 +172,23 @@ public static class EpsonMaintenance
     /// Clears the jobs waiting on the printer's Windows queue (when HSA is allowed to) and sends the printer a standard reset so it drops
     /// anything half-received. Returns a plain-language summary of what was done.
     /// </summary>
+    internal static TimeSpan PurgeLimit = TimeSpan.FromSeconds(20);
+
     public static async Task<string> ResetAsync(PrinterDevice dev, CancellationToken ct = default)
     {
         var done = new List<string>();
         if (dev.SpoolerName is not null)
         {
-            if (SpoolerPrinters.Purge(dev.SpoolerName, out var why)) done.Add("cleared the Windows print queue");
+            // Windows can take very long to clear a queue whose printer does not answer (a job stays "deleting"): on a thread of its own, with a limit, so the program and the reset go on
+            string name = dev.SpoolerName; string why = "";
+            var purge = Task.Run(() => SpoolerPrinters.Purge(name, out why));
+            if (await Task.WhenAny(purge, Task.Delay(PurgeLimit, ct)).ConfigureAwait(false) != purge)
+            {
+                ct.ThrowIfCancellationRequested();
+                Diag.Log($"Epson reset: Windows did not finish clearing the queue within {PurgeLimit.TotalSeconds:0} s");
+                done.Add("Windows did not finish clearing the print queue (a job is stuck; remove it in the queue window or restart the Print Spooler service)");
+            }
+            else if (await purge.ConfigureAwait(false)) done.Add("cleared the Windows print queue");
             else { Diag.Log("Epson reset: could not clear the queue: " + why); done.Add($"could not clear the Windows print queue ({why})"); }
         }
         using (var port = OpenPort(dev))
@@ -168,24 +221,28 @@ public static class EpsonMaintenance
         public string Path { get; }
         /// <summary>Remote commands have been sent on this connection and the command to leave remote mode has not.</summary>
         internal volatile bool InRemoteMode;
+        /// <summary>A nozzle check has been started and the signal that pushes its sheet out has not been sent: if the run ends early, the sheet would stay inside the printer.</summary>
+        internal volatile bool EndPageOwed;
         readonly IDisposable _hold = PrinterActivity.Begin();   // HSA's own searches and status requests wait until this connection is closed
         public Port(string path, Stream fs) { Path = path; _fs = fs; lock (OpenPorts) OpenPorts.Add(this); }
 
         /// <summary>Best effort and quick: used when the program is closing or a run failed half way. Never throws.</summary>
         internal void LeaveRemoteModeNow()
         {
-            if (!InRemoteMode) return;
+            if (!InRemoteMode && !EndPageOwed) return;
             try
             {
-                var exit = ExitRemoteNoReset();   // no reset: a reset would cut a page or a cleaning short
+                var exit = InRemoteMode ? ExitRemoteNoReset() : Array.Empty<byte>();   // no reset: a reset would cut a page or a cleaning short
+                bool eject = EndPageOwed;         // stopped nozzle check: push the sheet out as a finished one would
+                var bytes = eject ? exit.Concat(EndOfPage()).ToArray() : exit;
                 // a thread of its own, not the shared pool: this must work while the program is closing or the pool is busy
-                var write = new Thread(() => { try { _fs.Write(exit, 0, exit.Length); _fs.Flush(); } catch { } }) { IsBackground = true };
+                var write = new Thread(() => { try { _fs.Write(bytes, 0, bytes.Length); _fs.Flush(); } catch { } }) { IsBackground = true };
                 write.Start();
                 bool done = write.Join(TimeSpan.FromSeconds(2));
-                Diag.Log($"Epson: told the printer to leave remote mode (the run ended early or HSA is closing): {(done ? "sent" : "no answer in 2 s")}");
+                Diag.Log($"Epson: told the printer to leave remote mode{(eject ? " and to push the sheet out" : "")} (the run ended early or HSA is closing): {(done ? "sent" : "no answer in 2 s")}");
             }
             catch { /* the port may already be gone */ }
-            InRemoteMode = false;
+            InRemoteMode = false; EndPageOwed = false;
         }
 
         // pacing; tests shorten these
@@ -201,10 +258,22 @@ public static class EpsonMaintenance
         public TimeSpan ErrorGrace { get; init; } = TimeSpan.FromSeconds(15);
         public TimeSpan ActivityWindow { get; init; } = TimeSpan.FromSeconds(9);
 
+        /// <summary>How long the printer gets to take a command (they are a few bytes). A printer that is busy or in an error state stops taking data.</summary>
+        public TimeSpan WriteTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
         public async Task SendAsync(byte[] data, CancellationToken ct)
         {
-            await _fs.WriteAsync(data, ct).ConfigureAwait(false);
-            await _fs.FlushAsync(ct).ConfigureAwait(false);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(WriteTimeout);
+            try
+            {
+                await _fs.WriteAsync(data, cts.Token).ConfigureAwait(false);
+                await _fs.FlushAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new IOException("The printer is not taking commands (it is busy, in an error state, or still printing something). Wait for it to finish, or switch it off and on, then try again.");
+            }
         }
 
         /// <summary>
@@ -213,7 +282,7 @@ public static class EpsonMaintenance
         /// </summary>
         public async Task<string?> RunAsync(byte[] commands, CancellationToken ct, TimeSpan maxWait, bool endPage = false, bool expectActivity = false)
         {
-            InRemoteMode = true;
+            InRemoteMode = true; EndPageOwed = endPage;
             try { return await RunCoreAsync(commands, ct, maxWait, endPage, expectActivity).ConfigureAwait(false); }
             finally { LeaveRemoteModeNow(); }   // a cancelled or failed run must still let the printer leave remote mode
         }
@@ -245,7 +314,7 @@ public static class EpsonMaintenance
                 if (calm && longEnough && (sawBusy || DateTime.UtcNow - started > NoBusyGrace)) break;
 
                 // "00" is the printer's error state (no paper, paper jam, ink problem...). Waiting longer will not fix it.
-                if (code == "00") { errorSince ??= DateTime.UtcNow; if (DateTime.UtcNow - errorSince > ErrorGrace) break; }
+                if (code == "00") { EndPageOwed = false; errorSince ??= DateTime.UtcNow; if (DateTime.UtcNow - errorSince > ErrorGrace) break; }   // an error: nothing to push out
                 else errorSince = null;
                 await Task.Delay(PollEvery, ct).ConfigureAwait(false);
             }
@@ -256,8 +325,9 @@ public static class EpsonMaintenance
                 await SendAsync(ExitRemoteNoReset(), ct).ConfigureAwait(false);
                 InRemoteMode = false;
                 await SendAsync(EndOfPage(), ct).ConfigureAwait(false);
+                EndPageOwed = false;
             }
-            else { await SendAsync(ExitRemote(), ct).ConfigureAwait(false); InRemoteMode = false; }
+            else { await SendAsync(ExitRemote(), ct).ConfigureAwait(false); InRemoteMode = false; EndPageOwed = false; }
             return last;
         }
 
@@ -331,7 +401,7 @@ public static class EpsonMaintenance
     }
 
     /// <summary>Open the printer's USB print interface for reading and writing (asynchronous), or explain why that is not possible.</summary>
-    internal static FileStream OpenUsbStream(PrinterDevice dev, out string path, int vendor = EpsonVendor)
+    internal static Stream OpenUsbStream(PrinterDevice dev, out string path, int vendor = EpsonVendor)
     {
         path = FindPrintInterface(dev, vendor)
             ?? throw new InvalidOperationException(dev.HasNetwork && !dev.UsbCandidates.Any() && dev.SpoolerPort?.StartsWith("USB", StringComparison.OrdinalIgnoreCase) != true
@@ -345,7 +415,8 @@ public static class EpsonMaintenance
             int err = Marshal.GetLastWin32Error();
             throw new IOException($"Windows would not let HSA open the printer's USB port ({new System.ComponentModel.Win32Exception(err).Message}). Close any other program that is using the printer and try again.");
         }
-        return new FileStream(handle, FileAccess.ReadWrite, 4096, isAsync: true);
+        // a busy or failing printer can leave a read or write pending although it was cancelled: the wrapper closes the port instead of waiting for ever
+        return new PrintHub.Core.Usb.DeadlineStream(new FileStream(handle, FileAccess.ReadWrite, 4096, isAsync: true));
     }
 
     /// <summary>The USB print interfaces that are plugged in right now, with the name Windows gives each.</summary>
