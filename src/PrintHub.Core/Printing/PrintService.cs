@@ -45,7 +45,7 @@ public static class PrintService
             try
             {
                 var st = await directIpp.GetStatusAsync(ct);
-                accepts = st.SupportsPdf || (o.PreferDirectIpp && st.SupportsJpeg);
+                accepts = st.SupportsPdf || (o.PreferDirectIpp && (st.SupportsPwgRaster || st.SupportsJpeg));
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { Diag.Log("Print: could not ask the printer about its formats over IPP: " + ex.Message); }
             if (accepts)
@@ -106,6 +106,22 @@ public static class PrintService
             opts.PrintScaling = "fit";
             await ipp.PrintAsync(PdfWriter.Build(pages, src.Name), "application/pdf", src.Name, opts, ct);
         }
+        else if (status.SupportsPwgRaster)
+        {
+            // Raster is what a driverless printer prints from directly. A JPEG is decoded and treated as a photo: measured on an HP Smart Tank 580 over USB, the
+            // colour test page took 127-187 s as a JPEG and 35 s as PWG raster (237 s through the Windows driver).
+            var (wPt, hPt, keyword) = SheetFor(o.Paper, status.MediaDefault);
+            int dpi = status.PwgRasterResolutions.Count == 0 || status.PwgRasterResolutions.Contains(300) ? 300 : status.PwgRasterResolutions.Min();
+            var bitmaps = selected.Select(i => src.GetPage(i)).ToList();
+            try
+            {
+                opts.Media = keyword; opts.PrintScaling = null;
+                bool gray = !opts.Color;
+                var doc = PwgRaster.EncodePages(bitmaps, wPt, hPt, dpi, keyword, 1, gray);
+                await ipp.PrintAsync(doc, "image/pwg-raster", src.Name, opts, ct);
+            }
+            finally { foreach (var b in bitmaps) b.Dispose(); }
+        }
         else if (status.SupportsJpeg)
         {
             foreach (var i in selected)
@@ -135,6 +151,22 @@ public static class PrintService
             if (dpi >= 50 && dpi <= 2400) bmp.SetResolution((float)dpi, (float)dpi);
         }
         return ImageTools.Encode(bmp, OutputFormat.Jpeg, 92);
+    }
+
+    /// <summary>The sheet a raster page is made for: the paper asked for, else the printer's own default, else A4 or Letter by region. Points and the PWG keyword.</summary>
+    internal static (double WidthPt, double HeightPt, string Keyword) SheetFor(PaperChoice paper, string printerDefaultKeyword)
+    {
+        if (paper.WidthIn > 0 && paper.IppMedia.Length > 0) return (paper.WidthIn * 72, paper.HeightIn * 72, paper.IppMedia);
+        var m = System.Text.RegularExpressions.Regex.Match(printerDefaultKeyword ?? "", @"^(?<n>[a-z0-9\-]+_[^_]+)_(?<w>\d+(?:\.\d+)?)x(?<h>\d+(?:\.\d+)?)(?<u>mm|in)$");
+        if (m.Success)
+        {
+            double w = double.Parse(m.Groups["w"].Value, CultureInfo.InvariantCulture), h = double.Parse(m.Groups["h"].Value, CultureInfo.InvariantCulture);
+            double k = m.Groups["u"].Value == "mm" ? 72 / 25.4 : 72;
+            if (w > 0 && h > 0) return (w * k, h * k, printerDefaultKeyword!);
+        }
+        var (pw, ph) = PaperPoints(PaperChoice.Default);
+        bool metric = RegionInfo.CurrentRegion.IsMetric;
+        return (pw, ph, metric ? "iso_a4_210x297mm" : "na_letter_8.5x11in");
     }
 
     static (double W, double H) PaperPoints(PaperChoice p)

@@ -36,6 +36,12 @@ public sealed class PrinterStatus
     public bool SupportsDuplex => SidesSupported.Any(s => s.StartsWith("two-sided"));
     public bool SupportsPdf => DocumentFormats.Contains("application/pdf");
     public bool SupportsJpeg => DocumentFormats.Contains("image/jpeg");
+    /// <summary>PWG raster (image/pwg-raster): plain pixels, what AirPrint / IPP Everywhere printers take natively.</summary>
+    public bool SupportsPwgRaster => DocumentFormats.Contains("image/pwg-raster");
+    /// <summary>The paper the printer uses when none is asked for, as a PWG media keyword ("na_letter_8.5x11in"), or empty.</summary>
+    public string MediaDefault { get; init; } = "";
+    /// <summary>Resolutions (dpi) the printer takes PWG raster at; empty when it does not say.</summary>
+    public List<int> PwgRasterResolutions { get; init; } = new();
 
     /// <summary>Human readable alerts, excluding the noise reasons ("none", "*-report").</summary>
     public IEnumerable<string> Alerts => StateReasons
@@ -92,6 +98,8 @@ public sealed class PrinterStatus
             DocumentFormats = m.GetStrings("document-format-supported"),
             MediaSupported = m.GetStrings("media-supported"),
             MediaReady = m.GetStrings("media-ready"),
+            MediaDefault = m.GetString("media-default") ?? "",
+            PwgRasterResolutions = (m.Get("pwg-raster-document-resolution-supported")?.Values.OfType<IppResolution>().Select(r => r.X).Distinct().ToList()) ?? new(),
             SidesSupported = m.GetStrings("sides-supported"),
             ColorModes = m.GetStrings("print-color-mode-supported"),
             OperationsSupported = m.Get("operations-supported")?.Values.OfType<int>().Select(o => $"0x{o:X4}").ToList() ?? new(),

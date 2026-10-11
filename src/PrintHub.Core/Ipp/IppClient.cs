@@ -64,7 +64,7 @@ public sealed class IppClient
         "marker-levels", "marker-colors", "marker-types", "marker-low-levels", "marker-high-levels",
         "document-format-supported", "media-supported", "media-ready", "sides-supported", "print-color-mode-supported",
         "operations-supported", "pages-per-minute", "color-supported", "printer-more-info", "printer-uri-supported",
-        "printer-supply-info-uri", "printer-is-accepting-jobs",
+        "printer-supply-info-uri", "printer-is-accepting-jobs", "media-default", "pwg-raster-document-resolution-supported",
     };
 
     public async Task<PrinterStatus> GetStatusAsync(CancellationToken ct = default)
