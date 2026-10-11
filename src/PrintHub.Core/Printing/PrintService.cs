@@ -111,7 +111,7 @@ public static class PrintService
             foreach (var i in selected)
             {
                 using var bmp = src.GetPage(i);
-                await ipp.PrintAsync(ImageTools.Encode(bmp, OutputFormat.Jpeg, 92), "image/jpeg", $"{src.Name} {i + 1}", opts, ct);
+                await ipp.PrintAsync(EncodePageAsJpeg(bmp, src, o.Paper), "image/jpeg", $"{src.Name} {i + 1}", opts, ct);
             }
         }
         else
@@ -119,6 +119,22 @@ public static class PrintService
             throw new InvalidOperationException(
                 "This printer only accepts vendor-specific formats over IPP (no PDF or JPEG). Install its Windows driver and print through the Windows queue.");
         }
+    }
+
+    /// <summary>
+    /// A page as a JPEG for a printer that takes only that. A page rendered from a PDF carries no resolution of its own (the renderer tags it with the screen's: 96 or 120 dpi,
+    /// which makes it 26 x 37 inches), and a printer that obeys the tag instead of scaling to fit then prints a huge crop. It is tagged so that its natural size is the paper it
+    /// is meant to fill (fitted inside it): the pixel size depends on the display scaling of the computer, so no fixed number is right.
+    /// </summary>
+    internal static byte[] EncodePageAsJpeg(System.Drawing.Bitmap bmp, PrintSource src, PaperChoice paper)
+    {
+        if (src.OriginalMime == "application/pdf")
+        {
+            var (wPt, hPt) = PaperPoints(paper);
+            double dpi = Math.Max(bmp.Width / (wPt / 72.0), bmp.Height / (hPt / 72.0));
+            if (dpi >= 50 && dpi <= 2400) bmp.SetResolution((float)dpi, (float)dpi);
+        }
+        return ImageTools.Encode(bmp, OutputFormat.Jpeg, 92);
     }
 
     static (double W, double H) PaperPoints(PaperChoice p)

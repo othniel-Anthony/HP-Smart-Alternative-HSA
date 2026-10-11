@@ -75,6 +75,9 @@ public static class WindowsPrintService
             float margin = o.Borderless ? 0 : 20; // 1/100 inch units
             var area = new RectangleF(e.PageBounds.X + margin, e.PageBounds.Y + margin, e.PageBounds.Width - 2 * margin, e.PageBounds.Height - 2 * margin);
             var dest = Place(bmp.Width, bmp.Height, src.Dpi, area, o);
+            Diag.Log($"Windows print '{printerName}': page {e.PageBounds.Width}x{e.PageBounds.Height} (1/100 in), unit {g.PageUnit}, scale {g.PageScale}, device {g.DpiX:0}x{g.DpiY:0} dpi, " +
+                     $"clip {g.VisibleClipBounds.Width:0}x{g.VisibleClipBounds.Height:0}, resolution {doc.DefaultPageSettings.PrinterResolution.Kind} {doc.DefaultPageSettings.PrinterResolution.X}x{doc.DefaultPageSettings.PrinterResolution.Y}, " +
+                     $"image {bmp.Width}x{bmp.Height}, drawn {dest.Width:0}x{dest.Height:0} at {dest.X:0},{dest.Y:0}");
             if (o.Scale == ScaleMode.FillPage) g.SetClip(area);
             g.DrawImage(bmp, dest);
 

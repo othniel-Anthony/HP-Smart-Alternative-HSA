@@ -47,7 +47,10 @@ public sealed class PrintSource
             try { doc = await PdfDocument.LoadFromFileAsync(await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path))).AsTask(ct); }
             catch (Exception ex) { throw new InvalidOperationException("Could not open the PDF (it may be damaged or password protected): " + ex.Message, ex); }
 
-            var src = new PrintSource { Name = name, Dpi = 300, OriginalBytes = bytes, OriginalMime = "application/pdf" };
+            // The renderer scales its output by the display scaling of the program (asked for 2490 px, a 125 % display gave 3113): the pixels per inch of what comes back is
+            // measured from the first page, so "300 dpi" is never assumed. (Believing it made "actual size" 25 % too big and a printer that obeys the image's size print a crop.)
+            var rendered = new List<(byte[] Bytes, int W, int H)>();
+            double measuredDpi = 300;
             for (uint i = 0; i < doc.PageCount; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -59,8 +62,11 @@ public sealed class PrintSource
                 var buf = new byte[ras.Size];
                 await ras.ReadAsync(buf.AsBuffer(), (uint)ras.Size, InputStreamOptions.None).AsTask(ct);
                 var (w, h) = ImageTools.GetSize(buf);
-                src._pages.Add(buf); src._sizes.Add((w, h));
+                if (i == 0 && page.Size.Width > 0) measuredDpi = Math.Clamp(w / (page.Size.Width / 96.0), 72, 1200);   // pixels over inches: right even when the width was clamped
+                rendered.Add((buf, w, h));
             }
+            var src = new PrintSource { Name = name, Dpi = (int)Math.Round(measuredDpi), OriginalBytes = bytes, OriginalMime = "application/pdf" };
+            foreach (var (b, w, h) in rendered) { src._pages.Add(b); src._sizes.Add((w, h)); }
             return src;
         }
 
