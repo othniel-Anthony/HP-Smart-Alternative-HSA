@@ -256,6 +256,17 @@ public static class EpsonMaintenance
         /// </summary>
         public TimeSpan MinBeforeEndPage { get; init; } = TimeSpan.FromSeconds(8);
         public TimeSpan ErrorGrace { get; init; } = TimeSpan.FromSeconds(15);
+        /// <summary>
+        /// A nozzle check is ended (sheet pushed out) after the printer has said "waiting" (03) this long without ever going idle (04). An Epson L5590 answers 03 for
+        /// minutes after the pattern is drawn and goes idle only once the page is ended, so waiting for 04 left the sheet half out until the three-minute limit.
+        /// An L3250 says 03 for about 30 s while it draws the pattern and then 04.
+        /// </summary>
+        public TimeSpan WaitingPlateau { get; init; } = TimeSpan.FromSeconds(45);
+        /// <summary>
+        /// A cleaning is over when the printer, after showing a working code (07), says "waiting" (03) for this many polls in a row. An L3250 goes from 07 to 04 (idle);
+        /// an L5590 goes from 07 to 03 and stays there, so waiting for 04 held the next step (the nozzle check after a cleaning) back for the whole five-minute limit.
+        /// </summary>
+        public int WaitingPollsAfterWork { get; init; } = 5;
         public TimeSpan ActivityWindow { get; init; } = TimeSpan.FromSeconds(9);
 
         /// <summary>How long the printer gets to take a command (they are a few bytes). A printer that is busy or in an error state stops taking data.</summary>
@@ -293,16 +304,24 @@ public static class EpsonMaintenance
             await Task.Delay(StartDelay, ct).ConfigureAwait(false);
 
             var started = DateTime.UtcNow;
-            DateTime? errorSince = null;
-            bool sawBusy = false; int idleInARow = 0;
+            DateTime? errorSince = null, waitingSince = null;
+            bool sawBusy = false, sawWorkCode = false; int idleInARow = 0, waitingPolls = 0;
             string? last = null;
             while (DateTime.UtcNow - started < maxWait)
             {
                 var code = await PollStatusAsync(ct).ConfigureAwait(false);
                 last = code;
                 Diag.Log($"Epson: status {code ?? "(no answer)"} after {(DateTime.UtcNow - started).TotalSeconds:0.0} s");
-                bool idle = code == "04";
-                if (!idle) sawBusy = true; // no answer at all usually means it is too busy printing to talk
+                waitingPolls = code == "03" ? waitingPolls + 1 : 0;
+                if (code is not null and not "03" and not "04" and not "00") sawWorkCode = true;      // 01, 02, 07...: the printer is doing something
+                bool idle = code == "04" || (!endPage && sawWorkCode && waitingPolls >= WaitingPollsAfterWork);
+                if (code != "04") sawBusy = true; // no answer at all usually means it is too busy printing to talk
+                waitingSince = code == "03" ? waitingSince ?? DateTime.UtcNow : null;
+                if (endPage && waitingSince is { } ws && DateTime.UtcNow - ws >= WaitingPlateau && DateTime.UtcNow - started >= MinBeforeEndPage)
+                {
+                    Diag.Log($"Epson: the printer has said \"waiting\" for {(DateTime.UtcNow - ws).TotalSeconds:0} s and not gone idle; ending the page now");
+                    break;
+                }
 
                 // A command the printer does not understand leaves it plainly idle (04) the whole time. Cleaning always takes tens of seconds,
                 // so a printer that is still idle after the activity window ignored the command: say so instead of claiming it worked.
