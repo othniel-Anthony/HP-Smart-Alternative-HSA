@@ -229,12 +229,27 @@ public static class HpMaintenance
         if (ProblemFor(before) is { } problem) throw new InvalidOperationException(problem);
         if (before == "processing") throw new InvalidOperationException("The printer is busy with another job. Wait for it to finish and try again.");
 
-        using (var content = new StringContent(BuildJobXml(job.JobType), Encoding.UTF8, "text/xml"))
-        using (var resp = await http.PostAsync(new Uri(baseUri, InternalPrintPath), content, ct).ConfigureAwait(false))
+        for (int attempt = 0; ; attempt++)
         {
-            Diag.Log($"HP: {job.JobType} -> HTTP {(int)resp.StatusCode}");
-            if (!resp.IsSuccessStatusCode)
-                throw new InvalidOperationException($"The printer refused “{job.Title}” (HTTP {(int)resp.StatusCode}). It may not support it, or it is busy.");
+            using var content = new StringContent(BuildJobXml(job.JobType), Encoding.UTF8, "text/xml");
+            using var resp = await http.PostAsync(new Uri(baseUri, InternalPrintPath), content, ct).ConfigureAwait(false);
+            int code = (int)resp.StatusCode;
+            Diag.Log($"HP: {job.JobType} -> HTTP {code}");
+            if (resp.IsSuccessStatusCode) break;
+
+            // "not right now" (409, 503...): the printer may still be settling after the last job; try again before giving up
+            if (attempt < 3 && code is 409 or 423 or 429 or 500 or 502 or 503 or 504)
+            {
+                await Task.Delay(poll ?? TimeSpan.FromSeconds(2 * (attempt + 1)), ct).ConfigureAwait(false);
+                continue;
+            }
+            // say what the printer's own status says is wrong, when it says
+            var why = ProblemFor(await GetStatusCategoryAsync(http, baseUri, ct).ConfigureAwait(false));
+            string reply = "";
+            try { reply = (await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)).Trim(); } catch (HttpRequestException) { }
+            if (reply.Length > 200) reply = reply[..200];
+            throw new InvalidOperationException(why ??
+                $"The printer refused “{job.Title}” (HTTP {code}{(reply.Length > 0 ? ": " + reply : "")}). It may not support it, or it is busy: wait for it to finish, check for a paper or cartridge message, and try again.");
         }
 
         var started = DateTime.UtcNow;

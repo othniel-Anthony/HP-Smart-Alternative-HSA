@@ -15,19 +15,20 @@ public static class PwgRaster
     public const int HeaderSize = 1796;
 
     /// <summary>One page: see <see cref="EncodePages"/>.</summary>
-    public static byte[] Encode(Bitmap page, double widthPt, double heightPt, int dpi, string pageSizeName, int copies = 1, bool grayscale = false, double marginInches = 0.12) =>
-        EncodePages(new[] { page }, widthPt, heightPt, dpi, pageSizeName, copies, grayscale, marginInches);
+    public static byte[] Encode(Bitmap page, double widthPt, double heightPt, int dpi, string pageSizeName, int copies = 1, bool grayscale = false, double marginInches = 0.12, int repeat = 1) =>
+        EncodePages(new[] { page }, widthPt, heightPt, dpi, pageSizeName, copies, grayscale, marginInches, repeat);
 
     /// <summary>
     /// The pages fitted into sheets of <paramref name="widthPt"/> x <paramref name="heightPt"/> points (1/72 inch), centred on white, at <paramref name="dpi"/>,
     /// as one PWG raster document. A page that is wider than high is turned to fill a portrait sheet.
     /// </summary>
-    public static byte[] EncodePages(IReadOnlyList<Bitmap> pages, double widthPt, double heightPt, int dpi, string pageSizeName, int copies = 1, bool grayscale = false, double marginInches = 0.12)
+    public static byte[] EncodePages(IReadOnlyList<Bitmap> pages, double widthPt, double heightPt, int dpi, string pageSizeName, int copies = 1, bool grayscale = false, double marginInches = 0.12,
+        int repeat = 1)
     {
         int w = (int)Math.Round(widthPt / 72.0 * dpi), h = (int)Math.Round(heightPt / 72.0 * dpi);
         int bpp = grayscale ? 1 : 3;
-        using var ms = new MemoryStream(w * h / 4);
-        ms.Write(Encoding.ASCII.GetBytes("RaS2"));
+        repeat = Math.Max(1, repeat);
+        var records = new List<byte[]>();      // one entry per page: its header and pixels
         foreach (var page in pages)
         {
             using var canvas = new Bitmap(w, h, PixelFormat.Format24bppRgb);
@@ -49,9 +50,16 @@ public static class PwgRaster
                 }
                 else g.DrawImage(page, new RectangleF((w - dw) / 2, (h - dh) / 2, dw, dh));
             }
-            ms.Write(Header(w, h, bpp, dpi, widthPt, heightPt, pageSizeName, copies, grayscale, pages.Count));
-            WritePage(ms, canvas, bpp, grayscale);
+            using var rec = new MemoryStream(w * h / 8);
+            rec.Write(Header(w, h, bpp, dpi, widthPt, heightPt, pageSizeName, copies, grayscale, pages.Count * repeat));
+            WritePage(rec, canvas, bpp, grayscale);
+            records.Add(rec.ToArray());
         }
+        // "repeat" writes the whole set again and again: the copies are in the document, for printers that ignore a copies request for raster
+        using var ms = new MemoryStream();
+        ms.Write(Encoding.ASCII.GetBytes("RaS2"));
+        for (int r = 0; r < repeat; r++)
+            foreach (var rec in records) ms.Write(rec);
         return ms.ToArray();
     }
 
@@ -130,6 +138,32 @@ public static class PwgRaster
         Str(1668, "auto");                                           // RenderingIntent
         Str(1732, pageSizeName);                                     // PageSizeName
         return b;
+    }
+
+    /// <summary>The number of pages in a document made by <see cref="EncodePages"/> (for tests and logs).</summary>
+    public static int CountPages(byte[] doc)
+    {
+        if (doc.Length < 4 || Encoding.ASCII.GetString(doc, 0, 4) != "RaS2") throw new InvalidDataException("not a PWG raster document");
+        int p = 4, pages = 0;
+        while (p + HeaderSize <= doc.Length)
+        {
+            int w = (int)BinaryPrimitives.ReadUInt32BigEndian(doc.AsSpan(p + 372)), h = (int)BinaryPrimitives.ReadUInt32BigEndian(doc.AsSpan(p + 376));
+            int bpp = (int)BinaryPrimitives.ReadUInt32BigEndian(doc.AsSpan(p + 388)) / 8;
+            p += HeaderSize;
+            for (int y = 0; y < h;)
+            {
+                int repeat = doc[p++] + 1;
+                for (int x = 0; x < w;)
+                {
+                    int c = doc[p++];
+                    if (c < 128) { x += c + 1; p += bpp; }
+                    else { int n = 257 - c; x += n; p += n * bpp; }
+                }
+                y += repeat;
+            }
+            pages++;
+        }
+        return pages;
     }
 
     /// <summary>Reads a document made by <see cref="Encode"/> back (for tests): width, height, bytes per pixel and the pixels as RGB (or gray) rows.</summary>

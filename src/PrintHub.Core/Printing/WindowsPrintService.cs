@@ -20,7 +20,8 @@ public static class WindowsPrintService
 
         Bitmap Get(int idx)
         {
-            if (currentIndex != idx) { current?.Dispose(); current = src.GetPage(pages[idx]); currentIndex = idx; }
+            int source = pages[idx];      // the same source page comes round again when HSA makes the copies itself
+            if (currentIndex != source) { current?.Dispose(); current = src.GetPage(source); currentIndex = source; }
             return current!;
         }
 
@@ -30,8 +31,20 @@ public static class WindowsPrintService
         if (!ps.IsValid) throw new InvalidOperationException($"Windows does not know a printer named '{printerName}'.");
 
         if (!string.IsNullOrEmpty(o.PrintToFilePath)) { ps.PrintToFile = true; ps.PrintFileName = o.PrintToFilePath; }
-        ps.Copies = (short)Math.Clamp(o.Copies, 1, 999);
+        int copies = Math.Clamp(o.Copies, 1, 999);
+        ps.Copies = (short)copies;
         ps.Collate = o.Collate;
+        // A driver that makes no more than one copy ignores the count: the job comes out once whatever was asked for (reported on some HP printers).
+        // Then the copies are made here, by printing the pages that many times in one job.
+        int driverMax = 0;
+        try { driverMax = ps.MaximumCopies; } catch (Exception ex) { Diag.Log("Windows print: could not read the driver's copy limit: " + ex.Message); }
+        if (copies > 1 && driverMax > 0 && driverMax < copies)
+        {
+            Diag.Log($"Windows print '{printerName}': the driver makes at most {driverMax} copy; printing the {copies} copies from HSA");
+            ps.Copies = 1;
+            ps.Collate = false;
+            pages = RepeatForCopies(pages, copies, o.Collate);
+        }
 
         // Everything below is a preference. A driver that rejects one of them must not stop the page from printing.
         void Try(string what, Action a) { try { a(); } catch (Exception ex) { Diag.Log($"Windows print: could not apply {what}: {ex.Message}"); } }
@@ -88,6 +101,15 @@ public static class WindowsPrintService
         try { doc.Print(); Diag.Log($"Windows print '{printerName}': handed to the spooler after {total.ElapsedMilliseconds} ms"); }
         catch (InvalidPrinterException ex) { throw new InvalidOperationException($"The printer '{printerName}' is not available: {ex.Message}", ex); }
         finally { current?.Dispose(); }
+    }
+
+    /// <summary>The page list for <paramref name="copies"/> copies: whole sets one after another when collated, otherwise each page its copies in a row.</summary>
+    internal static List<int> RepeatForCopies(List<int> pages, int copies, bool collate)
+    {
+        var all = new List<int>(pages.Count * copies);
+        if (collate) for (int c = 0; c < copies; c++) all.AddRange(pages);
+        else foreach (var p in pages) for (int c = 0; c < copies; c++) all.Add(p);
+        return all;
     }
 
     static RectangleF Place(int w, int h, int dpi, RectangleF area, PrintOptions o)

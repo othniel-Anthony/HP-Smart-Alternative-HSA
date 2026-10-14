@@ -83,13 +83,13 @@ public static class PrintService
         if (src.OriginalMime == "application/pdf" && status.SupportsPdf)
         {
             opts.PageRanges = o.PageRange;
-            await ipp.PrintAsync(src.OriginalBytes!, "application/pdf", src.Name, opts, ct);
+            await SendWithCopiesAsync(ipp, src.OriginalBytes!, "application/pdf", src.Name, opts, ct);
             return;
         }
         var selected = PrintOptions.ParseRange(o.PageRange, src.PageCount);
         if (src.OriginalMime == "image/jpeg" && status.SupportsJpeg && src.PageCount == 1)
         {
-            await ipp.PrintAsync(src.OriginalBytes!, "image/jpeg", src.Name, opts, ct);
+            await SendWithCopiesAsync(ipp, src.OriginalBytes!, "image/jpeg", src.Name, opts, ct);
             return;
         }
 
@@ -104,7 +104,7 @@ public static class PrintService
                 pages.Add(new PdfPageData(ImageTools.Encode(bmp, OutputFormat.Jpeg, 92), bmp.Width, bmp.Height, src.Dpi, null, pw, ph));
             }
             opts.PrintScaling = "fit";
-            await ipp.PrintAsync(PdfWriter.Build(pages, src.Name), "application/pdf", src.Name, opts, ct);
+            await SendWithCopiesAsync(ipp, PdfWriter.Build(pages, src.Name), "application/pdf", src.Name, opts, ct);
         }
         else if (status.SupportsPwgRaster)
         {
@@ -117,8 +117,28 @@ public static class PrintService
             {
                 opts.Media = keyword; opts.PrintScaling = null;
                 bool gray = !opts.Color;
-                var doc = PwgRaster.EncodePages(bitmaps, wPt, hPt, dpi, keyword, 1, gray);
-                await ipp.PrintAsync(doc, "image/pwg-raster", src.Name, opts, ct);
+                int wanted = Math.Max(1, o.Copies);
+                int max = wanted > 1 ? await ipp.GetMaxCopiesAsync("image/pwg-raster", ct) ?? int.MaxValue : int.MaxValue;
+                if (max >= wanted)
+                {
+                    await ipp.PrintAsync(PwgRaster.EncodePages(bitmaps, wPt, hPt, dpi, keyword, 1, gray), "image/pwg-raster", src.Name, opts, ct);
+                }
+                else
+                {
+                    // The printer makes one copy of a raster job whatever "copies" says (an HP Smart Tank 580 lists 1-1 for raster, 1-99 for JPEG),
+                    // so the copies are in the document itself: whole sets, in jobs of at most ten so a large number does not build a huge file.
+                    Diag.Log($"Print: the printer takes at most {max} copy per raster job; putting the {wanted} copies in the document");
+                    opts.Copies = 1;
+                    byte[]? full = null;
+                    for (int left = wanted; left > 0;)
+                    {
+                        int n = Math.Min(left, MaxSetsPerRasterJob);
+                        byte[] doc = n == MaxSetsPerRasterJob ? (full ??= PwgRaster.EncodePages(bitmaps, wPt, hPt, dpi, keyword, 1, gray, repeat: n))
+                                                              : PwgRaster.EncodePages(bitmaps, wPt, hPt, dpi, keyword, 1, gray, repeat: n);
+                        await PrintWhenReadyAsync(ipp, doc, "image/pwg-raster", src.Name, opts, ct);
+                        left -= n;
+                    }
+                }
             }
             finally { foreach (var b in bitmaps) b.Dispose(); }
         }
@@ -127,7 +147,7 @@ public static class PrintService
             foreach (var i in selected)
             {
                 using var bmp = src.GetPage(i);
-                await ipp.PrintAsync(EncodePageAsJpeg(bmp, src, o.Paper), "image/jpeg", $"{src.Name} {i + 1}", opts, ct);
+                await SendWithCopiesAsync(ipp, EncodePageAsJpeg(bmp, src, o.Paper), "image/jpeg", $"{src.Name} {i + 1}", opts, ct);
             }
         }
         else
@@ -151,6 +171,36 @@ public static class PrintService
             if (dpi >= 50 && dpi <= 2400) bmp.SetResolution((float)dpi, (float)dpi);
         }
         return ImageTools.Encode(bmp, OutputFormat.Jpeg, 92);
+    }
+
+    const int MaxSetsPerRasterJob = 10;
+
+    /// <summary>
+    /// Sends one document with the requested copies. When the printer says it makes fewer copies than that for this format, the document is sent once
+    /// per copy instead, so the number asked for is what comes out and not one sheet.
+    /// </summary>
+    static async Task SendWithCopiesAsync(IppClient ipp, byte[] data, string mime, string name, IppPrintOptions opts, CancellationToken ct)
+    {
+        int wanted = Math.Max(1, opts.Copies);
+        int max = wanted > 1 ? await ipp.GetMaxCopiesAsync(mime, ct) ?? int.MaxValue : int.MaxValue;
+        if (max >= wanted) { await ipp.PrintAsync(data, mime, name, opts, ct); return; }
+        Diag.Log($"Print: the printer takes at most {max} copy per {mime} job; sending {wanted} jobs");
+        opts.Copies = 1;
+        for (int i = 0; i < wanted; i++) await PrintWhenReadyAsync(ipp, data, mime, name, opts, ct);
+    }
+
+    /// <summary>Print-Job, trying again a few times when the printer answers "busy" (still taking the previous job in).</summary>
+    static async Task PrintWhenReadyAsync(IppClient ipp, byte[] data, string mime, string name, IppPrintOptions opts, CancellationToken ct)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { await ipp.PrintAsync(data, mime, name, opts, ct); return; }
+            catch (IppException ex) when (ex.StatusCode == 0x0507 && attempt < 12)      // server-error-busy
+            {
+                Diag.Log($"Print: the printer is busy (attempt {attempt + 1}); waiting");
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+        }
     }
 
     /// <summary>The sheet a raster page is made for: the paper asked for, else the printer's own default, else A4 or Letter by region. Points and the PWG keyword.</summary>

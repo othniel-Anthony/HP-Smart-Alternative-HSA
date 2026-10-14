@@ -76,6 +76,27 @@ public sealed class IppClient
         return PrinterStatus.FromMessage(resp);
     }
 
+    /// <summary>
+    /// The most copies the printer makes for <paramref name="documentFormat"/> (its "copies-supported" for that format), or null when it does not say.
+    /// This differs by format: an HP Smart Tank 580 lists 1-99 for JPEG and 1-1 for PWG raster, and then prints one copy of a raster job whatever "copies" says.
+    /// </summary>
+    public async Task<int?> GetMaxCopiesAsync(string documentFormat, CancellationToken ct = default)
+    {
+        try
+        {
+            var req = IppMessage.CreateRequest(IppOp.GetPrinterAttributes, _uri);
+            req.Add(IppTag.OperationAttributes, IppTag.MimeMediaType, "document-format", documentFormat);
+            req.Add(IppTag.OperationAttributes, IppTag.Keyword, "requested-attributes", "copies-supported");
+            var resp = await SendAsync(req, null, ct).ConfigureAwait(false);
+            if (!resp.Successful || resp.Get("copies-supported") is not { } a) return null;
+            var ranges = a.Values.OfType<IppRange>().Select(r => r.Upper).ToList();
+            if (ranges.Count > 0) return ranges.Max();
+            var ints = a.Values.OfType<int>().ToList();
+            return ints.Count > 0 ? ints.Max() : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Diag.Log($"IPP: could not read copies-supported for {documentFormat}: {ex.Message}"); return null; }
+    }
+
     /// <summary>Print a document (PDF, JPEG, PWG/URF raster...). Returns the job id when reported.</summary>
     public async Task<int?> PrintAsync(byte[] data, string mimeType, string jobName, IppPrintOptions? o = null, CancellationToken ct = default)
     {

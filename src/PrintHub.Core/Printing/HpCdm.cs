@@ -179,15 +179,38 @@ public static class HpCdm
         catch (JsonException) { return null; }
     }
 
-    static async Task PatchAsync(HttpClient http, Uri uri, string json, string what, CancellationToken ct)
+    // answers that mean "not right now": a printer that has just finished a page, is warming up or is still settling after a cleaning says one of these
+    static readonly int[] TransientStatuses = { 409, 423, 429, 500, 502, 503, 504 };
+
+    /// <summary>
+    /// PATCHes <paramref name="path"/> under <paramref name="baseUri"/>. A "not right now" answer is tried again a few times, and a refusal is explained with the
+    /// printer's own alert (empty tray, cover open...) when it lists one, else with the HTTP code and what the printer sent back.
+    /// </summary>
+    static async Task PatchAsync(HttpClient http, Uri baseUri, string path, string json, string what, CancellationToken ct, TimeSpan? retryDelay = null)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Patch, uri) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
-        using var resp = await http.SendAsync(req, ct).ConfigureAwait(false);
-        Diag.Log($"HP CDM: {what} -> HTTP {(int)resp.StatusCode}");
-        if (!resp.IsSuccessStatusCode)
+        var uri = new Uri(baseUri, path);
+        for (int attempt = 0; ; attempt++)
         {
-            var why = await GetAlertTextAsync(http, uri, ct).ConfigureAwait(false);
-            throw new InvalidOperationException(why ?? $"The printer refused “{what}” (HTTP {(int)resp.StatusCode}). It may not support it, or it is busy.");
+            using var req = new HttpRequestMessage(HttpMethod.Patch, uri) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+            using var resp = await http.SendAsync(req, ct).ConfigureAwait(false);
+            int code = (int)resp.StatusCode;
+            Diag.Log($"HP CDM: {what} -> HTTP {code}");
+            if (resp.IsSuccessStatusCode) return;
+
+            string reply = "";
+            try { reply = (await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)).Trim(); } catch (Exception ex) when (ex is HttpRequestException) { }
+            if (reply.Length > 300) reply = reply[..300];
+            if (reply.Length > 0) Diag.Log($"HP CDM: {what} refused: {reply}");
+
+            if (attempt < 3 && TransientStatuses.Contains(code))
+            {
+                await Task.Delay(retryDelay ?? TimeSpan.FromSeconds(2 * (attempt + 1)), ct).ConfigureAwait(false);
+                continue;
+            }
+            // the alert list is under the printer's base address, not under the path just used
+            var why = await GetAlertTextAsync(http, baseUri, ct).ConfigureAwait(false);
+            throw new InvalidOperationException(why ??
+                $"The printer refused “{what}” (HTTP {code}{(reply.Length > 0 ? ": " + reply : "")}). It may not support it, or it is busy: wait for it to finish, check for a paper or cartridge message, and try again.");
         }
     }
 
@@ -195,6 +218,7 @@ public static class HpCdm
     public static async Task<string> RunReportAsync(HttpClient http, Uri baseUri, HpJob job, IProgress<string>? progress, CancellationToken ct,
         TimeSpan? maxWait = null, TimeSpan? poll = null, TimeSpan? startWindow = null)
     {
+        var retryDelay = poll;      // tests pass a short poll; real use waits seconds between attempts
         var wait = maxWait ?? TimeSpan.FromMinutes(job.Kind == HpJobKind.Clean ? 12 : 4);
         var every = poll ?? TimeSpan.FromSeconds(2);
         var window = startWindow ?? TimeSpan.FromSeconds(25);
@@ -216,7 +240,7 @@ public static class HpCdm
         }
 
         var body = JsonSerializer.Serialize(new { version, reportId = job.JobType, state = "processing" });
-        await PatchAsync(http, new Uri(baseUri, PrintPath), body, job.Title, ct).ConfigureAwait(false);
+        await PatchAsync(http, baseUri, PrintPath, body, job.Title, ct, retryDelay).ConfigureAwait(false);
 
         var started = DateTime.UtcNow; bool sawWork = false; int idleInARow = 0;
         while (DateTime.UtcNow - started < wait)
@@ -261,7 +285,7 @@ public static class HpCdm
         if (before is "processing" or "pending")
             throw new InvalidOperationException("An earlier alignment has not finished. Wait for the printer, or switch it off and on.");
         var body = JsonSerializer.Serialize(new { calibrationType = "penAlignSemiauto", operationType = "calibration" });
-        await PatchAsync(http, new Uri(baseUri, CalibrationPath), body, "alignment", ct).ConfigureAwait(false);
+        await PatchAsync(http, baseUri, CalibrationPath, body, "alignment", ct, poll).ConfigureAwait(false);
 
         progress?.Report("The printer is scanning the alignment page…");
         var started = DateTime.UtcNow; bool sawWork = false; int idle = 0;

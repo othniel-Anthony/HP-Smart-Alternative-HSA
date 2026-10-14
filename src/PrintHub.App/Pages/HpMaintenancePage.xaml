@@ -31,6 +31,21 @@
         </StackPanel>
       </Border>
 
+      <Border x:Name="WirelessCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+        <Grid ColumnSpacing="16">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Spacing="4">
+            <TextBlock Text="Wi-Fi Direct" Style="{StaticResource SectionTitle}" />
+            <TextBlock x:Name="DirectText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <TextBlock x:Name="StationText" Opacity="0.7" TextWrapping="Wrap" FontSize="12" IsTextSelectionEnabled="True" />
+          </StackPanel>
+          <Button x:Name="DirectButton" Grid.Column="1" VerticalAlignment="Center" Click="Direct_Click" Content="Turn on" AutomationProperties.Name="Switch Wi-Fi Direct" />
+        </Grid>
+      </Border>
+
       <Border Style="{StaticResource CardStyle}">
         <Grid ColumnSpacing="16">
           <Grid.ColumnDefinitions>

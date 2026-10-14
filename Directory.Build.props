@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.18.8</Version>
+    <Version>0.18.9</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>HP Smart Alternative (HSA)</Product>
     <Authors>HSA</Authors>

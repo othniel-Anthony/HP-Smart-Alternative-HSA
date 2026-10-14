@@ -11,6 +11,7 @@ public sealed partial class HpMaintenancePage : Page
 {
     bool _busy;
     HpMaintenanceInfo? _info;
+    HpWirelessState? _wireless;
     bool _probing;
 
     public HpMaintenancePage() => InitializeComponent();
@@ -22,7 +23,7 @@ public sealed partial class HpMaintenancePage : Page
     }
 
     void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.StatusChanged -= OnStatus; }
-    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _info = null; Update(); _ = ProbeAsync(); });
+    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _info = null; _wireless = null; Update(); _ = ProbeAsync(); });
     void OnStatus() => DispatcherQueue.TryEnqueue(ShowSupplies);
 
     async Task ProbeAsync()
@@ -33,13 +34,45 @@ public sealed partial class HpMaintenancePage : Page
         _probing = true; Update();
         try
         {
-            using var http = s.Session?.CreateWebServicesClient();
-            if (http is null || s.Session?.HttpBase is not { } baseUri) { _info = new HpMaintenanceInfo { Problem = NoServicesMessage(s) }; return; }
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            _info = await HpMaintenance.ProbeAsync(http, baseUri, cts.Token);
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    using var http = s.Session?.CreateWebServicesClient();
+                    if (http is null || s.Session?.HttpBase is not { } baseUri) { _info = new HpMaintenanceInfo { Problem = NoServicesMessage(s) }; return; }
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+                    _info = await HpMaintenance.ProbeAsync(http, baseUri, cts.Token);
+                    // Wi-Fi Direct settings exist only on printers that serve the JSON web services
+                    if (_info.Reachable && _info.Protocol == HpProtocol.Cdm) _wireless = await HpWireless.ReadAsync(http, baseUri, cts.Token);
+                    break;
+                }
+                catch (Exception ex) when (attempt == 0 && IsLostLink(ex)) { AppLog.Write("HP maintenance probe: the link was closed under it; trying again: " + ex.Message); await WaitForReconnectAsync(); }
+            }
         }
-        catch (Exception ex) { AppLog.Write("HP maintenance probe: " + ex); _info = new HpMaintenanceInfo { Problem = ex.Message }; }
+        catch (Exception ex) { AppLog.Write("HP maintenance probe: " + ex); _info = new HpMaintenanceInfo { Problem = Friendly(ex) }; }
         finally { _probing = false; BuildMenus(); Update(); }
+    }
+
+    /// <summary>
+    /// The connection to HSA's own local USB bridge (127.0.0.1) was refused: the session behind it was closed or replaced while a request was on its way
+    /// (the printer was re-detected, replugged or switched to another connection). The printer itself did not refuse anything.
+    /// </summary>
+    static bool IsLostLink(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+            if (e is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.ConnectionRefused }) return true;
+        return false;
+    }
+
+    static string Friendly(Exception ex) => IsLostLink(ex)
+        ? "HSA lost its connection to the printer while it was working (the USB link was closed or re-opened, for example when the printer was re-detected). The printer itself refused nothing, and a page it had already started carries on by itself. Wait a few seconds, check the printer, and try again."
+        : ex.Message;
+
+    /// <summary>Waits (up to 20 s) for the app to finish re-opening the printer's connection after it was replaced.</summary>
+    static async Task WaitForReconnectAsync()
+    {
+        for (int i = 0; i < 40 && (App.State.Connecting || App.State.Session is null); i++) await Task.Delay(500);
+        await Task.Delay(500);
     }
 
     static string NoServicesMessage(AppState s) =>
@@ -88,7 +121,45 @@ public sealed partial class HpMaintenancePage : Page
         WebButton.IsEnabled = hp;
         DriverButton.IsEnabled = d?.SpoolerName is not null;
         ReportCopyButton.IsEnabled = hp && s.Session?.HttpBase is not null;
+        ShowWireless(can);
         ShowSupplies();
+    }
+
+    void ShowWireless(bool can)
+    {
+        var w = _wireless;
+        WirelessCard.Visibility = w is null || App.State.Current?.IsHp != true ? Visibility.Collapsed : Visibility.Visible;
+        if (w is null) return;
+        DirectText.Text = w.DirectOn
+            ? "On" + (w.DirectSsid.Length > 0 ? $": network name “{w.DirectSsid}”" : "") + (w.DirectAddress is not null ? $", printer address {w.DirectAddress}" : "")
+            : "Off";
+        StationText.Text = $"Wi-Fi (joined to a network): {w.StationText}." + (w.DirectInSetupMode && !w.DirectOn ? " The printer is still in its first-time setup state." : "");
+        DirectButton.Content = w.DirectOn ? "Turn off" : "Turn on";
+        DirectButton.IsEnabled = can;
+    }
+
+    async void Direct_Click(object sender, RoutedEventArgs e)
+    {
+        var w = _wireless; if (w is null) return;
+        bool on = !w.DirectOn;
+        bool overWifi = App.State.Session?.ViaUsb != true;
+        string text = on
+            ? "The printer starts its own Wi-Fi network so a phone or computer can print to it without a router. It keeps its normal Wi-Fi connection."
+            : "The printer stops its own Wi-Fi network. Anything connected to it directly will lose the connection. Its normal Wi-Fi connection is not changed.";
+        if (overWifi && !on) text += " HSA is connected to this printer over the network: if that is through Wi-Fi Direct, HSA will lose it too.";
+        if (!await Ui.ConfirmAsync(XamlRoot, on ? "Turn Wi-Fi Direct on?" : "Turn Wi-Fi Direct off?", text, on ? "Turn on" : "Turn off")) return;
+        await RunAsync(on ? "Turning Wi-Fi Direct on…" : "Turning Wi-Fi Direct off…",
+            (http, baseUri, progress, ct) => HpWireless.SetDirectAsync(http, baseUri, on, progress, ct), TimeSpan.FromMinutes(2));
+        // show what the printer reports now, whether or not the change went through
+        try
+        {
+            if (App.State.Session?.CreateWebServicesClient() is { } http2 && App.State.Session.HttpBase is { } b)
+            {
+                using (http2) { using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)); _wireless = await HpWireless.ReadAsync(http2, b, cts.Token) ?? _wireless; }
+            }
+        }
+        catch (Exception ex) { AppLog.Write("HP Wi-Fi Direct re-read: " + ex.Message); }
+        Update();
     }
 
     void ShowSupplies()
@@ -116,16 +187,25 @@ public sealed partial class HpMaintenancePage : Page
     async Task<bool> RunAsync(string startText, Func<HttpClient, Uri, IProgress<string>, CancellationToken, Task<string>> work, TimeSpan timeout)
     {
         var s = App.State;
-        if (s.Session?.CreateWebServicesClient() is not { } http || s.Session.HttpBase is not { } baseUri) return false;
+        if (s.Session?.CreateWebServicesClient() is null || s.Session.HttpBase is null) return false;
         _busy = true; Update(); Ring.IsActive = true; ResultText.Text = startText;
-        try
+
+        // always the connection the app has now: it may have been re-opened since the last try
+        async Task<string> AttemptAsync()
         {
+            var session = App.State.Session;
+            if (session?.CreateWebServicesClient() is not { } http || session.HttpBase is not { } baseUri)
+                throw new InvalidOperationException("The printer is not connected right now. Wait for HSA to reconnect and try again.");
             using (http)
             {
                 using var cts = new CancellationTokenSource(timeout);
                 var progress = new Progress<string>(t => ResultText.Text = t);
-                ResultText.Text = await work(http, baseUri, progress, cts.Token);
+                return await work(http, baseUri, progress, cts.Token);
             }
+        }
+        try
+        {
+            ResultText.Text = await AttemptAsync();   // not repeated on a lost link: a job that had started would be sent twice
             App.Window.Toast(ResultText.Text, InfoBarSeverity.Success);
             return true;
         }
@@ -134,7 +214,7 @@ public sealed partial class HpMaintenancePage : Page
         {
             AppLog.Write("HP maintenance: " + ex);
             ResultText.Text = "";
-            await Ui.MessageAsync(XamlRoot, "That didn't work", ex.Message);
+            await Ui.MessageAsync(XamlRoot, "That didn't work", Friendly(ex));
             return false;
         }
         finally { _busy = false; Ring.IsActive = false; Update(); _ = App.State.RefreshStatusAsync(); }
