@@ -58,6 +58,34 @@ public static class HpMaintenance
 
     public static string BuildJobXml(string jobType) => string.Format(JobXml, System.Security.SecurityElement.Escape(jobType));
 
+    const string DefaultCapNs = "http://www.hp.com/schemas/imaging/con/ledm/internalprintcap/2008/03/21";
+    const string DefaultDynNs = "http://www.hp.com/schemas/imaging/con/ledm/internalprintdyn/2008/03/21";
+
+    /// <summary>The same job with the namespaces the printer itself uses in its InternalPrintCap document, or null when they are the ones HSA already sends.</summary>
+    internal static string? BuildJobXmlForPrinter(string jobType, string capXml)
+    {
+        try
+        {
+            var doc = System.Xml.Linq.XDocument.Parse(capXml);
+            string capNs = doc.Root?.Name.NamespaceName ?? "";
+            string dynNs = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "JobType")?.Name.NamespaceName ?? "";
+            if (capNs.Length == 0 || dynNs.Length == 0 || (capNs == DefaultCapNs && dynNs == DefaultDynNs)) return null;
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                   $"<ipcap:InternalPrintCap xmlns:ipcap=\"{capNs}\" xmlns:ipdyn=\"{dynNs}\" xmlns:dd=\"http://www.hp.com/schemas/imaging/con/dictionaries/1.0/\" " +
+                   "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n" +
+                   $"<ipdyn:JobType>{System.Security.SecurityElement.Escape(jobType)}</ipdyn:JobType>\n</ipcap:InternalPrintCap>";
+        }
+        catch (System.Xml.XmlException) { return null; }
+    }
+
+    /// <summary>The name the JSON web services use for an XML-services job type (their cleaning levels are numbered one higher).</summary>
+    internal static string CdmNameFor(string ledmJobType) => ledmJobType switch
+    {
+        "cleaningPageLevel1" => "cleaningPageLevel2",
+        "cleaningPageLevel2" => "cleaningPageLevel3",
+        _ => ledmJobType,
+    };
+
     // ---------------------------------------------------------------- naming the jobs
 
     static readonly Dictionary<string, (string Title, HpJobKind Kind, int Level)> Known = new(StringComparer.OrdinalIgnoreCase)
@@ -229,28 +257,8 @@ public static class HpMaintenance
         if (ProblemFor(before) is { } problem) throw new InvalidOperationException(problem);
         if (before == "processing") throw new InvalidOperationException("The printer is busy with another job. Wait for it to finish and try again.");
 
-        for (int attempt = 0; ; attempt++)
-        {
-            using var content = new StringContent(BuildJobXml(job.JobType), Encoding.UTF8, "text/xml");
-            using var resp = await http.PostAsync(new Uri(baseUri, InternalPrintPath), content, ct).ConfigureAwait(false);
-            int code = (int)resp.StatusCode;
-            Diag.Log($"HP: {job.JobType} -> HTTP {code}");
-            if (resp.IsSuccessStatusCode) break;
-
-            // "not right now" (409, 503...): the printer may still be settling after the last job; try again before giving up
-            if (attempt < 3 && code is 409 or 423 or 429 or 500 or 502 or 503 or 504)
-            {
-                await Task.Delay(poll ?? TimeSpan.FromSeconds(2 * (attempt + 1)), ct).ConfigureAwait(false);
-                continue;
-            }
-            // say what the printer's own status says is wrong, when it says
-            var why = ProblemFor(await GetStatusCategoryAsync(http, baseUri, ct).ConfigureAwait(false));
-            string reply = "";
-            try { reply = (await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)).Trim(); } catch (HttpRequestException) { }
-            if (reply.Length > 200) reply = reply[..200];
-            throw new InvalidOperationException(why ??
-                $"The printer refused “{job.Title}” (HTTP {code}{(reply.Length > 0 ? ": " + reply : "")}). It may not support it, or it is busy: wait for it to finish, check for a paper or cartridge message, and try again.");
-        }
+        var viaJson = await PostJobAsync(http, baseUri, job, progress, ct, maxWait, poll, startWindow).ConfigureAwait(false);
+        if (viaJson is not null) return viaJson;      // the printer took it through its JSON services, which also waited for it to finish
 
         var started = DateTime.UtcNow;
         bool sawWork = false; int readyInARow = 0;
@@ -276,6 +284,81 @@ public static class HpMaintenance
             }
         }
         throw new TimeoutException("The printer took too long to finish. Check it for errors.");
+    }
+
+    /// <summary>
+    /// Sends the job. Returns null when it was accepted over the XML services (the caller then waits for the printer), or the finished result when the printer only took
+    /// it through its JSON services. A printer that answers 400 ("bad request") to the standard form is asked again in the other ways HP's software is known to
+    /// ask: with the namespaces from the printer's own capability document, with a plain text/xml header, and through the JSON services. Each attempt is logged.
+    /// </summary>
+    static async Task<string?> PostJobAsync(HttpClient http, Uri baseUri, HpJob job, IProgress<string>? progress, CancellationToken ct,
+        TimeSpan? maxWait, TimeSpan? poll, TimeSpan? startWindow)
+    {
+        var uri = new Uri(baseUri, InternalPrintPath);
+        var attempts = new List<string>();
+
+        async Task<(int Code, string Reply)> Post(string xml, bool plainContentType)
+        {
+            using var content = new StringContent(xml, new UTF8Encoding(false), "text/xml");
+            if (plainContentType) content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/xml");   // no "; charset=utf-8"
+            using var resp = await http.PostAsync(uri, content, ct).ConfigureAwait(false);
+            string reply = "";
+            try { reply = (await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false)).Trim(); } catch (HttpRequestException) { }
+            if (reply.Length > 200) reply = reply[..200];
+            return ((int)resp.StatusCode, reply);
+        }
+
+        int code = 0; string reply = "";
+        for (int attempt = 0; ; attempt++)
+        {
+            (code, reply) = await Post(BuildJobXml(job.JobType), false).ConfigureAwait(false);
+            Diag.Log($"HP: {job.JobType} -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
+            if (code is >= 200 and < 300) return null;
+            // "not right now" (409, 503...): the printer may still be settling after the last job; try again before giving up
+            if (attempt < 3 && code is 409 or 423 or 429 or 500 or 502 or 503 or 504)
+            {
+                await Task.Delay(poll ?? TimeSpan.FromSeconds(2 * (attempt + 1)), ct).ConfigureAwait(false);
+                continue;
+            }
+            break;
+        }
+
+        if (code is 400 or 415 or 422 or 406)
+        {
+            attempts.Add($"standard request: HTTP {code}");
+            // 1. the printer's own namespaces
+            string? capXml = null;
+            try { capXml = await http.GetStringAsync(new Uri(baseUri, InternalPrintCapPath), ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { if (ct.IsCancellationRequested) throw; }
+            if (capXml is not null && BuildJobXmlForPrinter(job.JobType, capXml) is { } own)
+            {
+                (code, reply) = await Post(own, false).ConfigureAwait(false);
+                Diag.Log($"HP: {job.JobType} with the printer's own namespaces -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
+                if (code is >= 200 and < 300) return null;
+                attempts.Add($"printer's own namespaces: HTTP {code}");
+            }
+            // 2. a plain text/xml header (what HP's own tools send)
+            (code, reply) = await Post(BuildJobXml(job.JobType), true).ConfigureAwait(false);
+            Diag.Log($"HP: {job.JobType} with a plain text/xml header -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
+            if (code is >= 200 and < 300) return null;
+            attempts.Add($"plain text/xml header: HTTP {code}");
+
+            // 3. the JSON services, when the printer also has them and lists this job
+            var cdm = await HpCdm.ProbeAsync(http, baseUri, ct).ConfigureAwait(false);
+            var wanted = CdmNameFor(job.JobType);
+            if (cdm.Reachable && cdm.Jobs.FirstOrDefault(j => j.JobType.Equals(wanted, StringComparison.OrdinalIgnoreCase)) is { } cdmJob)
+            {
+                Diag.Log($"HP: the printer refused the XML job; sending {cdmJob.JobType} through its JSON services");
+                return await HpCdm.RunReportAsync(http, baseUri, cdmJob with { Title = job.Title }, progress, ct, maxWait, poll, startWindow).ConfigureAwait(false);
+            }
+            attempts.Add(cdm.Reachable ? "JSON services: job not listed" : "JSON services: not available");
+        }
+
+        // say what the printer's own status says is wrong, when it says
+        var why = ProblemFor(await GetStatusCategoryAsync(http, baseUri, ct).ConfigureAwait(false));
+        throw new InvalidOperationException(why ??
+            $"The printer refused “{job.Title}” (HTTP {code}{(reply.Length > 0 ? ": " + reply : "")}" + (attempts.Count > 1 ? "; HSA also tried " + string.Join(", ", attempts.Skip(1)) : "") +
+            "). It may not support it from here, or it is busy. Use “Copy diagnostics” on this page and send it so this printer can be supported, or run it from the printer's own menu or HP Smart.");
     }
 
     /// <summary>Starts a printhead alignment. Returns what the user has to do next. Manual alignment (choosing patterns) is not supported here.</summary>

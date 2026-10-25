@@ -108,7 +108,7 @@ public static class PrinterTools
             using (hpHttp)
             {
                 sb.AppendLine().AppendLine($"HP web services ({(session.ViaUsb ? "USB" : "network")}, {hpBase})");
-                foreach (var doc in new[] { "DevMgmt/DiscoveryTree.xml", "DevMgmt/ConsumableConfigDyn.xml", "DevMgmt/InternalPrintCap.xml", "DevMgmt/ProductStatusDyn.xml", "Calibration/State",
+                foreach (var doc in new[] { "DevMgmt/DiscoveryTree.xml", "DevMgmt/ConsumableConfigDyn.xml", "DevMgmt/InternalPrintCap.xml", "DevMgmt/InternalPrintDyn.xml", "DevMgmt/ProductStatusDyn.xml", "Calibration/State",
                     "cdm/system/v1/identity", "cdm/supply/v1/suppliesPublic", "cdm/report/v1/reports", "cdm/report/v1/print", "cdm/calibration/v1/capabilities", "cdm/calibration/v1/calibration/penAlignSemiauto", "cdm/alert/v1/alerts" })
                 {
                     try
@@ -117,7 +117,8 @@ public static class PrinterTools
                         using var r = await hpHttp.GetAsync(new Uri(hpBase, doc), cts.Token);
                         var body = await r.Content.ReadAsStringAsync(cts.Token);
                         sb.AppendLine($"  GET /{doc} -> {(int)r.StatusCode}");
-                        foreach (var line in (body.Length > 1800 ? body[..1800] + " ..." : body).Split('\n')) sb.AppendLine("    " + line.TrimEnd('\r'));
+                        int limit = doc.Contains("InternalPrint") ? 5000 : 1800;   // the job list and the job document matter most when a printer refuses a maintenance job
+                        foreach (var line in (body.Length > limit ? body[..limit] + " ..." : body).Split('\n')) sb.AppendLine("    " + line.TrimEnd('\r'));
                     }
                     catch (Exception ex) { sb.AppendLine($"  GET /{doc} failed: {ex.Message}"); }
                 }
@@ -131,7 +132,7 @@ public static class PrinterTools
             var log = Path.Combine(Settings.AppPaths.DataDir, "logs", $"printhub-{DateTime.Now:yyyyMMdd}.log");
             if (File.Exists(log))
             {
-                var recent = File.ReadLines(log).Where(l => l.Contains("USB") || l.Contains("WIA") || l.Contains("Windows print") || l.Contains("eSCL") || l.Contains("HP web services")).TakeLast(40).ToList();
+                var recent = File.ReadLines(log).Where(l => l.Contains("USB") || l.Contains("WIA") || l.Contains("Windows print") || l.Contains("eSCL") || l.Contains("HP web services") || l.Contains("HP:") || l.Contains("HP CDM") || l.Contains("HP maintenance")).TakeLast(60).ToList();
                 if (recent.Count > 0) { sb.AppendLine().AppendLine("Recent log lines"); foreach (var l in recent) sb.AppendLine("  " + l); }
             }
         }
