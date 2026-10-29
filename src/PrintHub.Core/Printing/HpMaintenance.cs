@@ -78,6 +78,26 @@ public static class HpMaintenance
         catch (System.Xml.XmlException) { return null; }
     }
 
+    /// <summary>
+    /// The job in the form the printer's own web page posts: the InternalPrintDyn document itself, with the job type in it, under a plain text/xml header. An ENVY 6000
+    /// answers this with 201 Created, and the HPLIP form above (a capability document as the root) with 400 whatever the paper or status.
+    /// </summary>
+    internal static string BuildDynJobXml(string jobType, string dynNs = DefaultDynNs) =>
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+        $"<ipdyn:InternalPrintDyn xmlns:ipdyn=\"{dynNs}\" xmlns:dd=\"http://www.hp.com/schemas/imaging/con/dictionaries/1.0/\">\n" +
+        $"<ipdyn:JobType>{System.Security.SecurityElement.Escape(jobType)}</ipdyn:JobType>\n</ipdyn:InternalPrintDyn>";
+
+    /// <summary>The ipdyn namespace the printer itself uses in its InternalPrintCap document, or null when it uses the usual one or the document cannot be read.</summary>
+    internal static string? DynNamespaceOf(string capXml)
+    {
+        try
+        {
+            string ns = System.Xml.Linq.XDocument.Parse(capXml).Descendants().FirstOrDefault(e => e.Name.LocalName == "JobType")?.Name.NamespaceName ?? "";
+            return ns.Length == 0 || ns == DefaultDynNs ? null : ns;
+        }
+        catch (System.Xml.XmlException) { return null; }
+    }
+
     /// <summary>The name the JSON web services use for an XML-services job type (their cleaning levels are numbered one higher).</summary>
     internal static string CdmNameFor(string ledmJobType) => ledmJobType switch
     {
@@ -130,6 +150,7 @@ public static class HpMaintenance
     static readonly Dictionary<string, string> StatusProblems = new(StringComparer.OrdinalIgnoreCase)
     {
         ["trayEmptyOrOpen"] = "The paper tray is empty or open. Load plain paper and close the tray.",
+        ["trayEmpty"] = "The paper tray is empty or open. Load plain paper and close the tray.",       // an ENVY 6000 says this (status text "Tray Empty or Open")
         ["jamInPrinter"] = "There is a paper jam. Clear it and try again.",
         ["closeDoorOrCover"] = "A door or cover is open. Close it and try again.",
         ["hardError"] = "The printer reports a hardware error. Switch it off and on, then try again.",
@@ -177,8 +198,11 @@ public static class HpMaintenance
         try
         {
             var xml = await http.GetStringAsync(new Uri(baseUri, StatusPath), ct).ConfigureAwait(false);
-            var cats = XDocument.Parse(xml).Descendants().Where(e => e.Name.LocalName == "StatusCategory").Select(e => e.Value.Trim()).Where(v => v.Length > 0).ToList();
+            var doc = XDocument.Parse(xml);
+            var cats = doc.Descendants().Where(e => e.Name.LocalName == "StatusCategory").Select(e => e.Value.Trim()).Where(v => v.Length > 0).ToList();
             if (cats.Count == 0) return null;
+            // the alert list can name a problem (an empty tray) that the status categories do not: "ready" next to it is not a go-ahead
+            cats.AddRange(doc.Descendants().Where(e => e.Name.LocalName == "ProductStatusAlertID").Select(e => e.Value.Trim()).Where(v => v.Length > 0 && !cats.Contains(v)).Distinct());
             Diag.Log("HP: status categories [" + string.Join(", ", cats) + "]");
             return ClassifyCategories(cats);
         }
@@ -288,8 +312,9 @@ public static class HpMaintenance
 
     /// <summary>
     /// Sends the job. Returns null when it was accepted over the XML services (the caller then waits for the printer), or the finished result when the printer only took
-    /// it through its JSON services. A printer that answers 400 ("bad request") to the standard form is asked again in the other ways HP's software is known to
-    /// ask: with the namespaces from the printer's own capability document, with a plain text/xml header, and through the JSON services. Each attempt is logged.
+    /// it through its JSON services. The first request is the one the printer's own web page makes. A printer that answers 400 ("bad request") is asked again in the other
+    /// ways known to work on other models: HPLIP's form (older printers), either form with the namespaces from the printer's own capability document, HPLIP's form with a
+    /// plain text/xml header, and the JSON services. Each attempt is logged with the printer's reply.
     /// </summary>
     static async Task<string?> PostJobAsync(HttpClient http, Uri baseUri, HpJob job, IProgress<string>? progress, CancellationToken ct,
         TimeSpan? maxWait, TimeSpan? poll, TimeSpan? startWindow)
@@ -308,12 +333,20 @@ public static class HpMaintenance
             return ((int)resp.StatusCode, reply);
         }
 
+        async Task<(bool Accepted, int Code, string Reply)> Try(string what, string xml, bool plain)
+        {
+            var (c, r) = await Post(xml, plain).ConfigureAwait(false);
+            Diag.Log($"HP: {job.JobType} ({what}) -> HTTP {c}" + (r.Length > 0 && c >= 400 ? $" ({r})" : ""));
+            if (c is not (>= 200 and < 300)) attempts.Add($"{what}: HTTP {c}");
+            return (c is >= 200 and < 300, c, r);
+        }
+
         int code = 0; string reply = "";
         for (int attempt = 0; ; attempt++)
         {
-            (code, reply) = await Post(BuildJobXml(job.JobType), false).ConfigureAwait(false);
-            Diag.Log($"HP: {job.JobType} -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
-            if (code is >= 200 and < 300) return null;
+            bool ok;
+            (ok, code, reply) = await Try("the web page's form", BuildDynJobXml(job.JobType), true).ConfigureAwait(false);
+            if (ok) return null;
             // "not right now" (409, 503...): the printer may still be settling after the last job; try again before giving up
             if (attempt < 3 && code is 409 or 423 or 429 or 500 or 502 or 503 or 504)
             {
@@ -325,25 +358,31 @@ public static class HpMaintenance
 
         if (code is 400 or 415 or 422 or 406)
         {
-            attempts.Add($"standard request: HTTP {code}");
-            // 1. the printer's own namespaces
+            bool ok;
+            // older printers: HPLIP's form (a capability document as the root, with a charset in the header)
+            (ok, code, reply) = await Try("HPLIP's form", BuildJobXml(job.JobType), false).ConfigureAwait(false);
+            if (ok) return null;
+
             string? capXml = null;
             try { capXml = await http.GetStringAsync(new Uri(baseUri, InternalPrintCapPath), ct).ConfigureAwait(false); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { if (ct.IsCancellationRequested) throw; }
-            if (capXml is not null && BuildJobXmlForPrinter(job.JobType, capXml) is { } own)
+            if (capXml is not null)
             {
-                (code, reply) = await Post(own, false).ConfigureAwait(false);
-                Diag.Log($"HP: {job.JobType} with the printer's own namespaces -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
-                if (code is >= 200 and < 300) return null;
-                attempts.Add($"printer's own namespaces: HTTP {code}");
+                if (DynNamespaceOf(capXml) is { } dynNs)
+                {
+                    (ok, code, reply) = await Try("the web page's form, the printer's namespace", BuildDynJobXml(job.JobType, dynNs), true).ConfigureAwait(false);
+                    if (ok) return null;
+                }
+                if (BuildJobXmlForPrinter(job.JobType, capXml) is { } own)
+                {
+                    (ok, code, reply) = await Try("HPLIP's form, the printer's namespaces", own, false).ConfigureAwait(false);
+                    if (ok) return null;
+                }
             }
-            // 2. a plain text/xml header (what HP's own tools send)
-            (code, reply) = await Post(BuildJobXml(job.JobType), true).ConfigureAwait(false);
-            Diag.Log($"HP: {job.JobType} with a plain text/xml header -> HTTP {code}" + (reply.Length > 0 && code >= 400 ? $" ({reply})" : ""));
-            if (code is >= 200 and < 300) return null;
-            attempts.Add($"plain text/xml header: HTTP {code}");
+            (ok, code, reply) = await Try("HPLIP's form, plain text/xml header", BuildJobXml(job.JobType), true).ConfigureAwait(false);
+            if (ok) return null;
 
-            // 3. the JSON services, when the printer also has them and lists this job
+            // the JSON services, when the printer also has them and lists this job
             var cdm = await HpCdm.ProbeAsync(http, baseUri, ct).ConfigureAwait(false);
             var wanted = CdmNameFor(job.JobType);
             if (cdm.Reachable && cdm.Jobs.FirstOrDefault(j => j.JobType.Equals(wanted, StringComparison.OrdinalIgnoreCase)) is { } cdmJob)
