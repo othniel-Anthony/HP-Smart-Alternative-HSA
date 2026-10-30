@@ -136,7 +136,7 @@ public sealed partial class SettingsPage : Page
             // remember what was exempted, before anything else can go wrong
             S.KeepPrinters = PrinterCleanup.UpdateExemptions(S.KeepPrinters, items.Where(i => i.Ticked).Select(i => i.Key), chosen, plan.Remove); Save();
 
-            CleanupBusy(true, "Waiting for administrator permission…");
+            CleanupBusy(true, "Waiting for administrator permission, then removing the printers and their leftover entries (this can take a few minutes)…");
             PrinterCleanup.Outcome outcome;
             try { outcome = await PrinterCleanup.RunElevatedAsync(result => PrinterCleanup.BuildRemovePrintersScript(chosen, result)); }
             catch (OperationCanceledException) { CleanupBusy(false, "Administrator permission was not given. Nothing was removed."); return; }

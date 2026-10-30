@@ -103,11 +103,14 @@ public static class PrinterCleanup
     /// </summary>
     const string DeviceCleanupScript = """
         if ($removedAny) {
-          function Base([string]$n) { if (-not $n) { return '' }; (($n -replace '\s*\((USB|NET|WSD|Network|Copy \d+)\)\s*$','' -replace '\s*\(Copy \d+\)\s*$','').Trim()).ToLowerInvariant() }
+          function Base([string]$n) { if (-not $n) { return '' }; (($n -replace '\s*\((USB|NET|WSD|Network|Copy \d+)\)\s*$','' -replace '\s*\(Copy \d+\)\s*$','' -replace '\s+FAX$','').Trim()).ToLowerInvariant() -replace '^hp hp ','hp ' }      # some HP USB entries say "HP HP Laser MFP..."
           $stillThere = @(Get-Printer | ForEach-Object { $_.Name.ToLowerInvariant() })
           $removedBases = @($targets | ForEach-Object { Base $_ } | Where-Object { $_ })
           $keptBases = @(Get-Printer | ForEach-Object { Base $_.Name })
-          foreach ($d in @(Get-PnpDevice -ErrorAction SilentlyContinue)) {
+          $devices = @(Get-PnpDevice -ErrorAction SilentlyContinue)
+          $hits = [ordered]@{}
+          $absentModels = New-Object 'System.Collections.Generic.HashSet[string]'
+          foreach ($d in $devices) {
             $id = [string]$d.InstanceId
             if ($id -match 'PRINTQUEUES$') { continue }
             $name = [string]$d.FriendlyName
@@ -120,11 +123,47 @@ public static class PrinterCleanup
               if ($b) { $hit = ($removedBases -contains $b) -and ($keptBases -notcontains $b) -and -not ($id -like 'USB\*' -and $d.Present) }   # a USB device that is plugged in now is left alone
               elseif ($id -like 'ROOT\SCANNER\*') { $hit = $true }          # a nameless leftover of a network scanner entry
             }
-            if ($hit -and $preview) { $lines.Add("DEVWOULD`t$name`t$id") }
-            elseif ($hit) {
-              $out = & pnputil.exe /remove-device $id 2>&1 | Out-String
-              if ($LASTEXITCODE -eq 0) { $lines.Add("DEVOK`t$name`t$id") } else { $lines.Add("DEVFAIL`t$name ($id)`t$(($out -replace '[\r\n]+',' ').Trim())") }
+            elseif (($id -like 'USB\VID_*' -or $id -like 'USBPRINT\*') -and -not $d.Present) {
+              # the USB printing entry Windows keeps for every USB printer it has seen: Windows Settings lists it as a printer ("Driver is unavailable") when the printer is not connected
+              $b = Base $name
+              if ($b -and ($removedBases -contains $b) -and ($keptBases -notcontains $b)) {
+                $hit = $true
+                $m = [regex]::Match($id, '^USB\\(VID_[0-9A-F]{4}&PID_[0-9A-F]{4})', 'IgnoreCase')
+                if ($m.Success) { [void]$absentModels.Add($m.Groups[1].Value.ToUpperInvariant()) }
+              }
             }
+            if ($hit) { $hits[$id] = $name }
+          }
+          # the rest of an absent USB printer (its composite parent, its other interfaces) goes with it; nothing that is present is touched
+          foreach ($d in $devices) {
+            if ($d.Present) { continue }
+            $id = [string]$d.InstanceId
+            if ($hits.Contains($id) -or $id -match 'PRINTQUEUES$') { continue }
+            $m = [regex]::Match($id, 'VID_[0-9A-F]{4}&PID_[0-9A-F]{4}', 'IgnoreCase')
+            if ($m.Success -and $absentModels.Contains($m.Value.ToUpperInvariant())) { $hits[$id] = [string]$d.FriendlyName }
+          }
+          # Windows Settings also lists a printer as long as its device container exists, and a container lives as long as any device (a card-reader disk, a volume, a FAX
+          # print interface...) belongs to it: everything absent in the container of a removed printer goes too. Never the machine's own root container, never anything present.
+          $rootContainer = '{00000000-0000-0000-FFFF-FFFFFFFFFFFF}'
+          $containers = New-Object 'System.Collections.Generic.HashSet[string]'
+          foreach ($id in @($hits.Keys)) {
+            $c = [string](Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_ContainerId' -ErrorAction SilentlyContinue).Data
+            if ($c -and $c.ToUpperInvariant() -ne $rootContainer) { [void]$containers.Add($c.ToUpperInvariant()) }
+          }
+          if ($containers.Count -gt 0) {
+            foreach ($d in $devices) {
+              if ($d.Present) { continue }
+              $id = [string]$d.InstanceId
+              if ($hits.Contains($id) -or $id -match 'PRINTQUEUES$') { continue }
+              $c = [string](Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_ContainerId' -ErrorAction SilentlyContinue).Data
+              if ($c -and $containers.Contains($c.ToUpperInvariant())) { $hits[$id] = [string]$d.FriendlyName }
+            }
+          }
+          foreach ($id in @($hits.Keys)) {
+            $name = $hits[$id]
+            if ($preview) { $lines.Add("DEVWOULD`t$name`t$id"); continue }
+            $out = & pnputil.exe /remove-device $id 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) { $lines.Add("DEVOK`t$name`t$id") } else { $lines.Add("DEVFAIL`t$name ($id)`t$(($out -replace '[\r\n]+',' ').Trim())") }
           }
         }
 
