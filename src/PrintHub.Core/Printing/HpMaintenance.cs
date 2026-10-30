@@ -302,7 +302,7 @@ public static class HpMaintenance
                 {
                     // never started: a cleaning always takes a while, so the printer ignored it; a short report page may simply have been too quick to catch
                     if (job.Kind == HpJobKind.Clean)
-                        throw new InvalidOperationException($"The printer did not react to “{job.Title}”: it stayed idle. Check that it has paper and no errors, or use HP Smart or the printer's own menu.");
+                        throw new InvalidOperationException($"The printer did not react to “{job.Title}”: it stayed idle. Check that it has paper and no errors, or use the printer's own menu.");
                     return "sent";
                 }
             }
@@ -397,7 +397,7 @@ public static class HpMaintenance
         var why = ProblemFor(await GetStatusCategoryAsync(http, baseUri, ct).ConfigureAwait(false));
         throw new InvalidOperationException(why ??
             $"The printer refused “{job.Title}” (HTTP {code}{(reply.Length > 0 ? ": " + reply : "")}" + (attempts.Count > 1 ? "; HSA also tried " + string.Join(", ", attempts.Skip(1)) : "") +
-            "). It may not support it from here, or it is busy. Use “Copy diagnostics” on this page and send it so this printer can be supported, or run it from the printer's own menu or HP Smart.");
+            "). It may not support it from here, or it is busy. Use “Copy diagnostics” on this page and send it so this printer can be supported, or run it from the printer's own menu.");
     }
 
     /// <summary>Starts a printhead alignment. Returns what the user has to do next. Manual alignment (choosing patterns) is not supported here.</summary>
@@ -407,7 +407,7 @@ public static class HpMaintenance
         // CDM printers print the page first (RunJobAsync with the "alignmentPage" report), then scan it: the caller drives the two steps
         if (protocol == HpProtocol.Cdm) return await HpCdm.ScanAlignmentAsync(http, baseUri, progress, ct, maxWait, poll).ConfigureAwait(false);
         if (mode.Equals("manual", StringComparison.OrdinalIgnoreCase))
-            return "This printer aligns by printing a page with numbered patterns and asking which line is best. HSA does not do that yet: use the printer web page (open it from the menu), HP Smart, or the printer's own menu.";
+            return "This printer aligns by printing a page with numbered patterns and asking which line is best. HSA does not do that yet: use the printer web page (open it from the menu) or the printer's own menu.";
 
         var before = await GetStatusCategoryAsync(http, baseUri, ct).ConfigureAwait(false);
         if (ProblemFor(before) is { } problem) throw new InvalidOperationException(problem);

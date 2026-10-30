@@ -76,6 +76,7 @@
 
       <StackPanel Orientation="Horizontal" Spacing="4">
         <HyperlinkButton x:Name="DriverButton" Click="Driver_Click" Content="Epson driver settings" />
+        <HyperlinkButton x:Name="DriversDownloadButton" Click="Drivers_Click" Content="Download drivers" AutomationProperties.Name="Download drivers" />
         <HyperlinkButton x:Name="QueueButton" Click="Queue_Click" Content="Print queue" />
       </StackPanel>
 

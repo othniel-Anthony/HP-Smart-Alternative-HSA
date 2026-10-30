@@ -77,7 +77,7 @@ public sealed partial class HpMaintenancePage : Page
 
     static string NoServicesMessage(AppState s) =>
         s.Current?.UsbCandidates.Any(u => u.Present && !u.Openable) == true
-            ? "This printer's USB web-services interface is held by another driver, so HSA cannot use it over USB. Connect the printer to your network, or use HP Smart."
+            ? "This printer's USB web-services interface is held by another driver, so HSA cannot use it over USB. Connect the printer to your network."
             : "HSA has no way to talk to this printer's web services (no network address and no usable USB interface). Connect it by USB or Wi-Fi and refresh.";
 
     void BuildMenus()
@@ -293,6 +293,7 @@ public sealed partial class HpMaintenancePage : Page
     }
 
     void Web_Click(object sender, RoutedEventArgs e) => App.Window.NavigateTo("web");
+    void Drivers_Click(object sender, RoutedEventArgs e) => Ui.OpenDrivers();
     void Driver_Click(object sender, RoutedEventArgs e)
     {
         try { SpoolerPrinters.OpenPreferences(App.State.Current!.SpoolerName!); } catch (Exception ex) { App.Window.Toast(ex.Message, InfoBarSeverity.Warning); }

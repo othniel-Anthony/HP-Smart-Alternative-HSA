@@ -145,6 +145,13 @@ public static class Ui
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true }); } catch { }
     }
 
+    /// <summary>Opens the place where printer drivers are kept (<see cref="PrintHub.Core.AppLinks.DriversUrl"/>) in the default browser.</summary>
+    public static void OpenDrivers()
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(PrintHub.Core.AppLinks.DriversUrl) { UseShellExecute = true }); }
+        catch (Exception ex) { App.Window.Toast("Could not open the drivers page: " + ex.Message, Microsoft.UI.Xaml.Controls.InfoBarSeverity.Warning); }
+    }
+
     public static void OpenFile(string path)
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); } catch { }

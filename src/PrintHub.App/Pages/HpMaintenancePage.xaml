@@ -65,6 +65,7 @@
       <StackPanel Orientation="Horizontal" Spacing="4">
         <HyperlinkButton x:Name="WebButton" Click="Web_Click" Content="Printer web page" />
         <HyperlinkButton x:Name="DriverButton" Click="Driver_Click" Content="HP driver settings" />
+        <HyperlinkButton x:Name="DriversDownloadButton" Click="Drivers_Click" Content="Download drivers" AutomationProperties.Name="Download drivers" />
         <HyperlinkButton x:Name="ReportCopyButton" Click="Diagnostics_Click" Content="Copy diagnostics" AutomationProperties.Name="Copy HP diagnostics" />
       </StackPanel>
 

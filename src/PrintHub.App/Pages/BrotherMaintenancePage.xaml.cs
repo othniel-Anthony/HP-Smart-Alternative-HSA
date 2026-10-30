@@ -146,6 +146,7 @@ public sealed partial class BrotherMaintenancePage : Page
         App.Window.Toast("The printer's report was copied to the clipboard.", InfoBarSeverity.Success);
     }
 
+    void Drivers_Click(object sender, RoutedEventArgs e) => Ui.OpenDrivers();
     void Driver_Click(object sender, RoutedEventArgs e) => Safe(() => SpoolerPrinters.OpenPreferences(App.State.Current!.SpoolerName!));
     void Queue_Click(object sender, RoutedEventArgs e) => Safe(() => SpoolerPrinters.OpenQueue(App.State.Current!.SpoolerName!));
     static void Safe(Action a) { try { a(); } catch (Exception ex) { App.Window.Toast(ex.Message, InfoBarSeverity.Warning); } }

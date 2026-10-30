@@ -264,7 +264,7 @@ public static class HpCdm
             {
                 var why = await GetAlertTextAsync(http, baseUri, ct).ConfigureAwait(false);
                 if (job.Kind == HpJobKind.Clean)
-                    throw new InvalidOperationException(why ?? $"The printer did not react to “{job.Title}”: it stayed idle. Check that it has paper and no errors, or use HP Smart or the printer's own menu.");
+                    throw new InvalidOperationException(why ?? $"The printer did not react to “{job.Title}”: it stayed idle. Check that it has paper and no errors, or use the printer's own menu.");
                 if (why is not null) throw new InvalidOperationException(why);
                 return "sent"; // a short page may simply have been too quick to catch
             }
