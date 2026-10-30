@@ -26,15 +26,21 @@ public sealed partial class WebPage : Page
 
     void OnChanged() => DispatcherQueue.TryEnqueue(async () => await LoadAsync());
 
+    /// <summary>The page being shown comes through the private USB bridge on this PC (the printer has no network address).</summary>
+    bool _viaUsbBridge;
+
     async Task LoadAsync()
     {
         var s = App.State;
-        _target = s.Session?.WebUri ?? s.Current?.WebUri;
+        // a printer that is on the network is opened at its network address only; the USB bridge is for printers that have no network address
+        var network = s.Current?.NetworkWebUri;
+        _viaUsbBridge = network is null && s.Session?.ViaUsb == true;
+        _target = network ?? s.Session?.WebUri ?? s.Current?.WebUri;
         Notice.IsOpen = false;
 
         if (s.Current is null) { Show("Choose a printer to open its web page."); return; }
         if (s.Connecting) { Show("Connecting to the printer…"); return; }
-        if (s.Session is { ViaUsb: true, HasWebPage: false })
+        if (network is null && s.Session is { ViaUsb: true, HasWebPage: false })
         {
             Show($"{s.Current.Name} answers over USB but has no web page of its own (many entry-level inkjets don't). Ink levels, if the printer reports them, are on the Home screen.");
             return;
@@ -63,7 +69,7 @@ public sealed partial class WebPage : Page
             Placeholder.Visibility = Visibility.Collapsed;
             Web.Visibility = Visibility.Visible;
             Web.CoreWebView2.Navigate(_target.ToString());
-            if (s.Session?.ViaUsb == true)
+            if (_viaUsbBridge)
             {
                 Notice.Severity = InfoBarSeverity.Informational;
                 Notice.Title = "Connected over USB";
@@ -104,7 +110,7 @@ public sealed partial class WebPage : Page
                 Notice.Message = $"{args.WebErrorStatus}. Check that the printer is on, then press Reload.";
                 Notice.IsOpen = true;
             }
-            else if (App.State.Session?.ViaUsb != true) Notice.IsOpen = false;
+            else if (!_viaUsbBridge) Notice.IsOpen = false;
         });
     }
 
@@ -115,7 +121,7 @@ public sealed partial class WebPage : Page
     async void External_Click(object sender, RoutedEventArgs e)
     {
         if (_target is null) return;
-        if (App.State.Session?.ViaUsb == true)
+        if (_viaUsbBridge)
             await Ui.MessageAsync(XamlRoot, "Opening in your browser", "The USB connection is only available while HSA is running. The page will open in your default browser using the local address " + _target + ", which only works on this PC.");
         await Windows.System.Launcher.LaunchUriAsync(_target);
     }

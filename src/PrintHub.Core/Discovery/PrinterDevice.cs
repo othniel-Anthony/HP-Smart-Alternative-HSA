@@ -48,6 +48,26 @@ public sealed class PrinterDevice
     public bool IsBrother => Manufacturer.Contains("brother", StringComparison.OrdinalIgnoreCase) || Name.Contains("brother", StringComparison.OrdinalIgnoreCase)
                              || (SpoolerDriver?.Contains("brother", StringComparison.OrdinalIgnoreCase) ?? false) || UsbCandidates.Any(u => u.VendorId == 0x04F9);
     public bool HasNetwork => IppUri is not null || EsclUri is not null;
+
+    /// <summary>
+    /// Where the printer's own web page is on the network, or null when the printer is not on a network. A printer that is on the network is always opened at this address,
+    /// never through the private USB bridge (127.0.0.1) that HSA uses to reach a USB printer: the bridge only works on this PC while HSA runs, the network address works anywhere.
+    /// The page address the printer announced is used first, then its address, then the host of its IPP or eSCL address.
+    /// </summary>
+    public Uri? NetworkWebUri
+    {
+        get
+        {
+            if (!HasNetwork) return null;
+            if (WebUri is { } w && !IsLoopback(w)) return w;
+            if (Address is { Length: > 0 } a && Uri.TryCreate($"http://{a}/", UriKind.Absolute, out var fromAddress) && !IsLoopback(fromAddress)) return fromAddress;
+            foreach (var u in new[] { IppUri, EsclUri })
+                if (u is not null && !IsLoopback(u)) return new Uri($"http://{u.Host}/");
+            return null;
+        }
+    }
+
+    static bool IsLoopback(Uri u) => u.IsLoopback;
     public bool HasUsbHttp => Usb is { Openable: true } || UsbCandidates.Any(u => u.Openable);
     public bool CanScan => EsclUri is not null || WiaDeviceId is not null || HasUsbHttp;
     public bool CanPrint => SpoolerName is not null || IppUri is not null || HasUsbHttp;
