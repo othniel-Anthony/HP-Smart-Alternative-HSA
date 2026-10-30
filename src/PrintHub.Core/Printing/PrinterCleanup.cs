@@ -79,17 +79,56 @@ public static class PrinterCleanup
     /// A script that removes the named printers and reports "OK\tname" or "FAIL\tname\treason" per printer to <paramref name="resultFile"/>. It looks each printer up in the list
     /// Windows returns and removes that object: a name is never used as a pattern (printer names can contain [ ] which are wildcards).
     /// </summary>
-    public static string BuildRemovePrintersScript(IEnumerable<string> names, string resultFile) =>
+    public static string BuildRemovePrintersScript(IEnumerable<string> names, string resultFile, bool previewDevicesOnly = false) =>
         "$ErrorActionPreference = 'Continue'\r\n" +
         $"$targets = @({string.Join(", ", names.Select(Q))})\r\n" +
         "$lines = New-Object System.Collections.Generic.List[string]\r\n" +
+        $"$removedAny = ${(previewDevicesOnly ? "true" : "false")}\r\n" +
+        $"$preview = ${(previewDevicesOnly ? "true" : "false")}\r\n" +
         "foreach ($p in @(Get-Printer)) {\r\n" +
-        "  if ($targets -contains $p.Name) {\r\n" +
-        "    try { Remove-Printer -InputObject $p -ErrorAction Stop; $lines.Add(\"OK`t$($p.Name)\") }\r\n" +
+        "  if (-not $preview -and $targets -contains $p.Name) {\r\n" +
+        "    try { Remove-Printer -InputObject $p -ErrorAction Stop; $lines.Add(\"OK`t$($p.Name)\"); $removedAny = $true }\r\n" +
         "    catch { $lines.Add(\"FAIL`t$($p.Name)`t$($_.Exception.Message -replace '[\\r\\n]+',' ')\") }\r\n" +
         "  }\r\n" +
         "}\r\n" +
+        DeviceCleanupScript +
         $"[System.IO.File]::WriteAllLines({Q(resultFile)}, $lines)\r\n";
+
+    /// <summary>
+    /// Part of the removal script, run only when a printer was removed. Removing a queue from the spooler leaves Windows' own device entries for it behind (the "print queue"
+    /// devices under SWD\PRINTENUM, WSD printer entries, and the scanner entries a printer's driver registered: ROOT\SCANNER, ESCLUSB, WSD scan services), and Windows Settings
+    /// builds its Printers and scanners list from them. Removed here: the entries of print queues that no longer exist (not present), and the scanner entries named like a
+    /// removed printer (the name without " (USB)", " (NET)" or " (Copy n)"). Never touched: the root print queue, the entry of any printer that still exists in the
+    /// spooler (an exempted printer that is switched off has an entry that is not "present"), and scanner entries named like a printer that was kept.
+    /// </summary>
+    const string DeviceCleanupScript = """
+        if ($removedAny) {
+          function Base([string]$n) { if (-not $n) { return '' }; (($n -replace '\s*\((USB|NET|WSD|Network|Copy \d+)\)\s*$','' -replace '\s*\(Copy \d+\)\s*$','').Trim()).ToLowerInvariant() }
+          $stillThere = @(Get-Printer | ForEach-Object { $_.Name.ToLowerInvariant() })
+          $removedBases = @($targets | ForEach-Object { Base $_ } | Where-Object { $_ })
+          $keptBases = @(Get-Printer | ForEach-Object { Base $_.Name })
+          foreach ($d in @(Get-PnpDevice -ErrorAction SilentlyContinue)) {
+            $id = [string]$d.InstanceId
+            if ($id -match 'PRINTQUEUES$') { continue }
+            $name = [string]$d.FriendlyName
+            $hit = $false
+            if ($id -like 'SWD\PRINTENUM\*' -or $d.Class -in 'PrintQueue','Printer','WSDPrintDevice' -or $id -like 'SWD\WSDPRINT\*') {
+              $hit = (-not $d.Present) -and ($stillThere -notcontains $name.ToLowerInvariant())
+            }
+            elseif ($d.Class -eq 'Image' -or $id -like 'ROOT\SCANNER\*' -or $id -like 'SWD\ESCLUSB\*' -or $id -like 'SWD\DAFWSDPROVIDER\*') {
+              $b = Base $name
+              if ($b) { $hit = ($removedBases -contains $b) -and ($keptBases -notcontains $b) -and -not ($id -like 'USB\*' -and $d.Present) }   # a USB device that is plugged in now is left alone
+              elseif ($id -like 'ROOT\SCANNER\*') { $hit = $true }          # a nameless leftover of a network scanner entry
+            }
+            if ($hit -and $preview) { $lines.Add("DEVWOULD`t$name`t$id") }
+            elseif ($hit) {
+              $out = & pnputil.exe /remove-device $id 2>&1 | Out-String
+              if ($LASTEXITCODE -eq 0) { $lines.Add("DEVOK`t$name`t$id") } else { $lines.Add("DEVFAIL`t$name ($id)`t$(($out -replace '[\r\n]+',' ').Trim())") }
+            }
+          }
+        }
+
+        """;
 
     /// <summary>The same for drivers: each is removed from Windows and from its driver store. A driver a printer still uses is refused by Windows and reported as FAIL.</summary>
     public static string BuildRemoveDriversScript(IEnumerable<string> names, string resultFile) =>
@@ -104,7 +143,12 @@ public static class PrinterCleanup
         "}\r\n" +
         $"[System.IO.File]::WriteAllLines({Q(resultFile)}, $lines)\r\n";
 
-    public sealed record Outcome(List<string> Done, List<(string Name, string Reason)> Failed);
+    public sealed record Outcome(List<string> Done, List<(string Name, string Reason)> Failed)
+    {
+        /// <summary>Leftover Windows device entries (print queues, scanners) that were removed so Windows Settings no longer lists the printers.</summary>
+        public List<string> Devices { get; } = new();
+        public List<(string Name, string Reason)> DeviceFailed { get; } = new();
+    }
 
     public static Outcome ParseResult(IEnumerable<string> lines)
     {
@@ -114,6 +158,9 @@ public static class PrinterCleanup
             var f = l.Split('\t');
             if (f.Length >= 2 && f[0] == "OK") o.Done.Add(f[1]);
             else if (f.Length >= 2 && f[0] == "FAIL") o.Failed.Add((f[1], f.Length > 2 ? f[2] : ""));
+            else if (f.Length >= 2 && f[0] == "DEVOK") o.Devices.Add(f[1]);
+            else if (f.Length >= 2 && f[0] == "DEVWOULD") o.Devices.Add(f[1] + " [" + (f.Length > 2 ? f[2] : "") + "]");
+            else if (f.Length >= 2 && f[0] == "DEVFAIL") o.DeviceFailed.Add((f[1], f.Length > 2 ? f[2] : ""));
         }
         return o;
     }

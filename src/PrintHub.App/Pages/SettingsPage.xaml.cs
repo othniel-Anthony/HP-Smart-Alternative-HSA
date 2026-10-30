@@ -126,7 +126,7 @@ public sealed partial class SettingsPage : Page
             var exemptBefore = new HashSet<string>(S.KeepPrinters, StringComparer.OrdinalIgnoreCase);
             var items = plan.Remove.Select(n => new Ui.ChecklistItem(n, n, !exemptBefore.Contains(n))).ToList();
             string message = "Tick the printers to remove from Windows, together with their saved settings: the entries Windows keeps for them in the registry " +
-                             "(HKEY_CURRENT_USER\\Printers: ConvertUserDevModesCount, DevModePerUser and DevModes2) and any copy saved in HSA. " +
+                             "(HKEY_CURRENT_USER\\Printers: ConvertUserDevModesCount, DevModePerUser and DevModes2), the leftover device entries Windows Settings lists them from, and any copy saved in HSA. " +
                              "Untick a printer to keep it: it is left exactly as it is, and HSA remembers that for next time. " +
                              (plan.Keep.Count > 0 ? $"Windows' built-in printers always stay ({string.Join(", ", plan.Keep)}). " : "") +
                              "The drivers stay installed (use “Uninstall printer drivers” for them). This cannot be undone: removed printers have to be added again.";
@@ -162,11 +162,11 @@ public sealed partial class SettingsPage : Page
 
             int kept = plan.Remove.Count - chosen.Count;
             string summary = $"Removed {outcome.Done.Count} of {chosen.Count} printers" + (kept > 0 ? $" ({kept} kept as you chose)" : "") +
-                             $". Cleaned {registry} saved setting{(registry == 1 ? "" : "s")} in the registry" + (backup is not null ? $" (a copy of the registry key is in {backup})" : "") + (clearedSaved.Count > 0 ? $" and {clearedSaved.Count} printer{(clearedSaved.Count == 1 ? "" : "s")} saved in HSA." : ".");
+                             $". Cleaned {registry} saved setting{(registry == 1 ? "" : "s")} in the registry" + (outcome.Devices.Count > 0 ? $", and {outcome.Devices.Count} leftover device entr{(outcome.Devices.Count == 1 ? "y" : "ies")} so Windows Settings no longer lists them" : "") + (backup is not null ? $" (a copy of the registry key is in {backup})" : "") + (clearedSaved.Count > 0 ? $" and {clearedSaved.Count} printer{(clearedSaved.Count == 1 ? "" : "s")} saved in HSA." : ".");
             AppLog.Write("Printer clean-up: " + summary + (outcome.Failed.Count > 0 ? " Failed: " + string.Join("; ", outcome.Failed.Select(f => f.Name + " (" + f.Reason + ")")) : ""));
             CleanupBusy(false, summary);
-            if (outcome.Failed.Count > 0)
-                await Ui.MessageAsync(XamlRoot, "Some printers could not be removed", string.Join("\n", outcome.Failed.Select(f => $"{f.Name}: {f.Reason}")) + "\n\nA printer with a job stuck in its queue is the usual reason: switch the printer off, clear the queue and try again.");
+            if (outcome.Failed.Count > 0 || outcome.DeviceFailed.Count > 0)
+                await Ui.MessageAsync(XamlRoot, "Some printers could not be removed", string.Join("\n", outcome.Failed.Concat(outcome.DeviceFailed).Select(f => $"{f.Name}: {f.Reason}")) + "\n\nA printer with a job stuck in its queue is the usual reason: switch the printer off, clear the queue and try again.");
         }
         catch (Exception ex) { AppLog.Write("Printer clean-up: " + ex); CleanupBusy(false, "That did not work: " + ex.Message); }
     }
