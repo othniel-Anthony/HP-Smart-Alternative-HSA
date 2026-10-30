@@ -178,6 +178,16 @@ public sealed class AppState
         }
     }
 
+    /// <summary>Lets go of the printer in use (it was removed from Windows): its connection is closed and the window shows no printer until one is chosen or found.</summary>
+    public async Task ForgetPrinterAsync()
+    {
+        var old = Session;
+        Session = null; Current = null; Status = null; StatusError = null; Queue = null; Connecting = false;
+        Settings.SelectedPrinterId = null; SaveSettings();
+        CurrentChanged?.Invoke(); StatusChanged?.Invoke();
+        if (old is not null) { try { await old.DisposeAsync(); } catch { } }
+    }
+
     public async Task SelectAsync(PrinterDevice? device)
     {
         if (device is null) return;

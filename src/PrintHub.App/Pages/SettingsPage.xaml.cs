@@ -107,6 +107,110 @@ public sealed partial class SettingsPage : Page
     void OpenLogs_Click(object sender, RoutedEventArgs e) { Directory.CreateDirectory(AppLog.Folder); Ui.OpenFile(AppLog.Folder); }
     void OpenSettings_Click(object sender, RoutedEventArgs e) => Ui.OpenFile(Path.GetDirectoryName(SettingsStore.FilePath)!);
 
+    // ------------------------------------------------------------------ clean up printers and drivers
+
+    void CleanupBusy(bool busy, string text = "") { RemovePrintersButton.IsEnabled = RemoveDriversButton.IsEnabled = !busy; CleanupRing.IsActive = busy; CleanupStatus.Text = text; }
+
+    async void RemovePrinters_Click(object sender, RoutedEventArgs e)
+    {
+        CleanupBusy(true, "Looking at the installed printers…");
+        try
+        {
+            var plan = PrinterCleanup.PlanPrinters(SpoolerPrinters.List());
+            if (plan.Remove.Count == 0)
+            {
+                CleanupBusy(false, "There are no printers to remove.");
+                await Ui.MessageAsync(XamlRoot, "Nothing to remove", "Windows has no printers installed apart from its built-in ones (" + string.Join(", ", plan.Keep) + ").");
+                return;
+            }
+            var exemptBefore = new HashSet<string>(S.KeepPrinters, StringComparer.OrdinalIgnoreCase);
+            var items = plan.Remove.Select(n => new Ui.ChecklistItem(n, n, !exemptBefore.Contains(n))).ToList();
+            string message = "Tick the printers to remove from Windows, together with their saved settings: the entries Windows keeps for them in the registry " +
+                             "(HKEY_CURRENT_USER\\Printers: ConvertUserDevModesCount, DevModePerUser and DevModes2) and any copy saved in HSA. " +
+                             "Untick a printer to keep it: it is left exactly as it is, and HSA remembers that for next time. " +
+                             (plan.Keep.Count > 0 ? $"Windows' built-in printers always stay ({string.Join(", ", plan.Keep)}). " : "") +
+                             "The drivers stay installed (use “Uninstall printer drivers” for them). This cannot be undone: removed printers have to be added again.";
+            var chosen = await Ui.ConfirmChecklistAsync(XamlRoot, "Which printers should be removed?", message, items, "Remove {0} printers");
+            if (chosen is null) { CleanupBusy(false, "Nothing was removed."); return; }
+
+            // remember what was exempted, before anything else can go wrong
+            S.KeepPrinters = PrinterCleanup.UpdateExemptions(S.KeepPrinters, items.Where(i => i.Ticked).Select(i => i.Key), chosen, plan.Remove); Save();
+
+            CleanupBusy(true, "Waiting for administrator permission…");
+            PrinterCleanup.Outcome outcome;
+            try { outcome = await PrinterCleanup.RunElevatedAsync(result => PrinterCleanup.BuildRemovePrintersScript(chosen, result)); }
+            catch (OperationCanceledException) { CleanupBusy(false, "Administrator permission was not given. Nothing was removed."); return; }
+
+            CleanupBusy(true, "Cleaning up the saved settings…");
+            var remaining = SpoolerPrinters.List().Select(p => p.Name).ToList();             // what really still exists (exempt, built-in, or refused), whatever the script reported
+            // saved first, so the entries can be put back by double-clicking the file
+            string? backup = PrinterCleanup.BackupRegistry(Path.Combine(PrintHub.Core.Settings.AppPaths.DataDir, "registry-backups"));
+            int registry = PrinterCleanup.CleanRegistry(remaining);
+            // printers saved in HSA: gone, unless one is a printer that was exempted
+            var keepNames = new HashSet<string>(remaining.Concat(S.KeepPrinters), StringComparer.OrdinalIgnoreCase);
+            var clearedSaved = S.Printers.Where(sp => !keepNames.Contains(sp.Name)).ToList();
+            S.Printers.RemoveAll(sp => clearedSaved.Contains(sp));
+            if (S.SelectedPrinterId is { } sel && clearedSaved.Any(sp => sp.Id == sel)) S.SelectedPrinterId = null;
+            Save();
+            var gone = new HashSet<string>(outcome.Done, StringComparer.OrdinalIgnoreCase);
+            var cur = App.State.Current;
+            bool currentGone = cur is not null && ((cur.SpoolerName is not null && gone.Contains(cur.SpoolerName)) || clearedSaved.Any(sp => sp.Id == cur.Id));
+            App.State.Devices.RemoveAll(d => (d.SpoolerName is not null && gone.Contains(d.SpoolerName)) || clearedSaved.Any(sp => sp.Id == d.Id));
+            BuildSaved();
+            if (currentGone) await App.State.ForgetPrinterAsync();
+            await App.State.DiscoverAsync();
+
+            int kept = plan.Remove.Count - chosen.Count;
+            string summary = $"Removed {outcome.Done.Count} of {chosen.Count} printers" + (kept > 0 ? $" ({kept} kept as you chose)" : "") +
+                             $". Cleaned {registry} saved setting{(registry == 1 ? "" : "s")} in the registry" + (backup is not null ? $" (a copy of the registry key is in {backup})" : "") + (clearedSaved.Count > 0 ? $" and {clearedSaved.Count} printer{(clearedSaved.Count == 1 ? "" : "s")} saved in HSA." : ".");
+            AppLog.Write("Printer clean-up: " + summary + (outcome.Failed.Count > 0 ? " Failed: " + string.Join("; ", outcome.Failed.Select(f => f.Name + " (" + f.Reason + ")")) : ""));
+            CleanupBusy(false, summary);
+            if (outcome.Failed.Count > 0)
+                await Ui.MessageAsync(XamlRoot, "Some printers could not be removed", string.Join("\n", outcome.Failed.Select(f => $"{f.Name}: {f.Reason}")) + "\n\nA printer with a job stuck in its queue is the usual reason: switch the printer off, clear the queue and try again.");
+        }
+        catch (Exception ex) { AppLog.Write("Printer clean-up: " + ex); CleanupBusy(false, "That did not work: " + ex.Message); }
+    }
+
+    async void RemoveDrivers_Click(object sender, RoutedEventArgs e)
+    {
+        CleanupBusy(true, "Looking at the installed drivers…");
+        try
+        {
+            var plan = PrinterCleanup.PlanDrivers(await PrinterCleanup.ListDriversAsync());
+            if (plan.Remove.Count == 0)
+            {
+                CleanupBusy(false, "There are no manufacturer drivers to remove.");
+                await Ui.MessageAsync(XamlRoot, "Nothing to remove", "Windows has no printer drivers from HP, Epson, Canon, Brother or other manufacturers installed.");
+                return;
+            }
+            // a driver a printer still uses is offered unticked: Windows would refuse it, and a printer that was kept (exempt) keeps its driver
+            var usedBy = SpoolerPrinters.List().GroupBy(p => p.Driver, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Select(p => p.Name).ToList(), StringComparer.OrdinalIgnoreCase);
+            var exemptBefore = new HashSet<string>(S.KeepDrivers, StringComparer.OrdinalIgnoreCase);
+            var items = plan.Remove.Select(n => usedBy.TryGetValue(n, out var users)
+                ? new Ui.ChecklistItem(n, $"{n}   (used by {(users.Count == 1 ? users[0] : users.Count + " printers")})", false)
+                : new Ui.ChecklistItem(n, n, !exemptBefore.Contains(n))).ToList();
+            string message = "Tick the printer drivers to remove from Windows and from its driver store. Microsoft's own and generic drivers always stay. " +
+                             "A driver that an installed printer uses is not ticked (Windows would refuse it): remove that printer first, or keep both. " +
+                             "Untick a driver to keep it: HSA remembers that for next time. To use a printer again afterwards, install its driver (the “Download drivers” link on the maintenance pages).";
+            var chosen = await Ui.ConfirmChecklistAsync(XamlRoot, "Which drivers should be uninstalled?", message, items, "Uninstall {0} drivers");
+            if (chosen is null) { CleanupBusy(false, "Nothing was removed."); return; }
+            S.KeepDrivers = PrinterCleanup.UpdateExemptions(S.KeepDrivers, items.Where(i => i.Ticked).Select(i => i.Key), chosen, plan.Remove); Save();
+
+            CleanupBusy(true, "Waiting for administrator permission…");
+            PrinterCleanup.Outcome outcome;
+            try { outcome = await PrinterCleanup.RunElevatedAsync(result => PrinterCleanup.BuildRemoveDriversScript(chosen, result)); }
+            catch (OperationCanceledException) { CleanupBusy(false, "Administrator permission was not given. Nothing was removed."); return; }
+
+            int kept = plan.Remove.Count - chosen.Count;
+            string summary = $"Uninstalled {outcome.Done.Count} of {chosen.Count} drivers" + (kept > 0 ? $" ({kept} left as you chose or because a printer uses them)." : ".");
+            AppLog.Write("Driver clean-up: " + summary + (outcome.Failed.Count > 0 ? " Failed: " + string.Join("; ", outcome.Failed.Select(f => f.Name + " (" + f.Reason + ")")) : ""));
+            CleanupBusy(false, summary);
+            if (outcome.Failed.Count > 0)
+                await Ui.MessageAsync(XamlRoot, "Some drivers could not be removed", string.Join("\n", outcome.Failed.Select(f => $"{f.Name}: {f.Reason}")) + "\n\nA driver that an installed printer still uses cannot be removed: remove the printer first.");
+        }
+        catch (Exception ex) { AppLog.Write("Driver clean-up: " + ex); CleanupBusy(false, "That did not work: " + ex.Message); }
+    }
+
     void BuildSaved()
     {
         SavedPanel.Children.Clear();

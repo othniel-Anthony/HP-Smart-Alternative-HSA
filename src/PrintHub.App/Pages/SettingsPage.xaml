@@ -52,6 +52,22 @@
 
       <Border Style="{StaticResource CardStyle}">
         <StackPanel Spacing="10">
+          <TextBlock Text="Clean up printers and drivers" Style="{StaticResource SectionTitle}" />
+          <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                     Text="For starting from nothing, for example between customers. Both buttons show exactly what they will remove and ask first; Windows asks for administrator permission. Nothing is removed from a printer itself." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="RemovePrintersButton" Content="Remove all printers…" Click="RemovePrinters_Click" AutomationProperties.Name="Remove all printers" />
+            <Button x:Name="RemoveDriversButton" Content="Uninstall printer drivers…" Click="RemoveDrivers_Click" AutomationProperties.Name="Uninstall printer drivers" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <ProgressRing x:Name="CleanupRing" IsActive="False" Width="20" Height="20" />
+            <TextBlock x:Name="CleanupStatus" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="640" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource CardStyle}">
+        <StackPanel Spacing="10">
           <TextBlock Text="Updates and installation" Style="{StaticResource SectionTitle}" />
           <ToggleSwitch x:Name="UpdateCheckSwitch" Header="Check for a new version when HSA starts" Toggled="UpdateCheck_Toggled" />
           <ToggleSwitch x:Name="UpdateAutoSwitch" Header="Download new versions automatically (you choose when to restart into them)" Toggled="UpdateAuto_Toggled" />

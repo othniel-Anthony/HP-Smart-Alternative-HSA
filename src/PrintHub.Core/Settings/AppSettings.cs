@@ -97,6 +97,10 @@ public sealed class AppSettings
     /// <summary>The user chose "Don't ask again" on the offer to install HSA.</summary>
     public bool InstallPromptDismissed { get; set; }
     public List<SavedPrinter> Printers { get; set; } = new();
+    /// <summary>Printers the user exempted from "Remove all printers" (by name). They stay unticked in the list the next time.</summary>
+    public List<string> KeepPrinters { get; set; } = new();
+    /// <summary>Drivers the user exempted from "Uninstall printer drivers" (by name).</summary>
+    public List<string> KeepDrivers { get; set; } = new();
     public List<ShortcutDef> Shortcuts { get; set; } = ShortcutDef.Defaults();
 
     [JsonIgnore] public string EffectiveSaveFolder => string.IsNullOrWhiteSpace(SaveFolder) ? ExportService.DefaultFolder() : SaveFolder;

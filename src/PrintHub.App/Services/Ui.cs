@@ -77,6 +77,51 @@ public static class Ui
         return await d.ShowAsync() == ContentDialogResult.Primary;
     }
 
+    public sealed record ChecklistItem(string Key, string Label, bool Ticked);
+
+    /// <summary>
+    /// A confirmation with a scrolling checklist: what is ticked will be affected, what is unticked is left alone. The button says how many are ticked and is off when none is.
+    /// Returns the keys that are ticked, or null when the user cancels. The default button is Cancel.
+    /// </summary>
+    public static async Task<List<string>?> ConfirmChecklistAsync(XamlRoot root, string title, string message, IReadOnlyList<ChecklistItem> items, string primaryFormat)
+    {
+        var d = new ContentDialog { Title = title, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = root };
+        var boxes = items.Select(i => new CheckBox { Content = i.Label, Tag = i.Key, IsChecked = i.Ticked, MinHeight = 30 }).ToList();
+        void Refresh()
+        {
+            int n = boxes.Count(b => b.IsChecked == true);
+            d.PrimaryButtonText = n == 0 ? "Nothing ticked" : string.Format(primaryFormat, n);
+            d.IsPrimaryButtonEnabled = n > 0;
+        }
+        foreach (var b in boxes) { b.Checked += (_, _) => Refresh(); b.Unchecked += (_, _) => Refresh(); }
+        Refresh();
+
+        var panel = new StackPanel { Spacing = 8, MaxWidth = 520 };
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        var quick = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var all = new HyperlinkButton { Content = "Tick all" }; all.Click += (_, _) => { foreach (var b in boxes) b.IsChecked = true; };
+        var none = new HyperlinkButton { Content = "Untick all" }; none.Click += (_, _) => { foreach (var b in boxes) b.IsChecked = false; };
+        quick.Children.Add(all); quick.Children.Add(none);
+        panel.Children.Add(quick);
+        var list = new StackPanel { Spacing = 0 };
+        foreach (var b in boxes) list.Children.Add(b);
+        panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 240 });
+        d.Content = panel;
+        return await d.ShowAsync() == ContentDialogResult.Primary ? boxes.Where(b => b.IsChecked == true).Select(b => (string)b.Tag).ToList() : null;
+    }
+
+    /// <summary>A confirmation with a scrolling list of exactly what will be affected. The default button is the safe one (Cancel).</summary>
+    public static async Task<bool> ConfirmListAsync(XamlRoot root, string title, string message, IEnumerable<string> items, string primary, string close = "Cancel")
+    {
+        var panel = new StackPanel { Spacing = 10, MaxWidth = 520 };
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+        var list = new StackPanel { Spacing = 2 };
+        foreach (var i in items) list.Children.Add(new TextBlock { Text = "• " + i, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+        panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 240 });
+        var d = new ContentDialog { Title = title, Content = panel, PrimaryButtonText = primary, CloseButtonText = close, DefaultButton = ContentDialogButton.Close, XamlRoot = root };
+        return await d.ShowAsync() == ContentDialogResult.Primary;
+    }
+
     public static async Task<string?> PromptAsync(XamlRoot root, string title, string message, string placeholder = "", string primary = "OK")
     {
         var box = new TextBox { PlaceholderText = placeholder, MinWidth = 320 };
