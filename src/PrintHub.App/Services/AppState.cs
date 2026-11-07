@@ -140,6 +140,16 @@ public sealed class AppState
         // re-select the previously used printer (or the only one)
         var keep = Current is null ? null : PrinterDevice.FindSame(Devices, Current);
 
+        // The printer in use was on USB and is not found any more: it was unplugged (or switched off). Its connection is dead, so close it and tell the pages, which then
+        // show "not connected" instead of buttons that cannot work; the choice stays, and plugging it in again reconnects (the branch below opens a new session).
+        if (Current is not null && keep is null && (Current.OnUsb || Session?.ViaUsb == true) && Session is not null && !Connecting)
+        {
+            AppLog.Write($"{Current.Name} is not on USB any more: closing its connection");
+            var gone = Session; Session = null; Status = null; StatusError = "The printer is not connected."; Queue = null;
+            CurrentChanged?.Invoke(); StatusChanged?.Invoke();
+            try { await gone.DisposeAsync(); } catch { }
+        }
+
         // A printer that is plugged in by USB and online is the one the user wants to use: pick it without asking. (Until the user picks one by
         // hand, it wins over the remembered printer; afterwards only a printer plugged in since the last search is switched to.)
         var usbPick = Environment.GetEnvironmentVariable("HSA_NO_USB_AUTOSELECT") == "1" ? null : PrinterPicker.PickUsb(Devices, Current, Settings.SelectedPrinterId, SpoolerPrinters.GetDefault(), _userChose, _usbNames);

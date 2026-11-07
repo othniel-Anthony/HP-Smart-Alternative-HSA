@@ -205,16 +205,15 @@ public sealed partial class MainWindow : Window
         // Epson-only tools: the entry exists only while an Epson printer is selected
         bool epson = s.Current?.IsEpson == true;
         MaintenanceItem.Visibility = epson ? Visibility.Visible : Visibility.Collapsed;
-        if (!epson && ReferenceEquals(Nav.SelectedItem, MaintenanceItem)) NavigateTo("home");
         bool hp = s.Current?.IsHp == true;
         HpMaintenanceItem.Visibility = hp ? Visibility.Visible : Visibility.Collapsed;
-        if (!hp && ReferenceEquals(Nav.SelectedItem, HpMaintenanceItem)) NavigateTo("home");
         bool canon = s.Current?.IsCanon == true;
         CanonMaintenanceItem.Visibility = canon ? Visibility.Visible : Visibility.Collapsed;
-        if (!canon && ReferenceEquals(Nav.SelectedItem, CanonMaintenanceItem)) NavigateTo("home");
         bool brother = s.Current?.IsBrother == true;
         BrotherMaintenanceItem.Visibility = brother ? Visibility.Visible : Visibility.Collapsed;
-        if (!brother && ReferenceEquals(Nav.SelectedItem, BrotherMaintenanceItem)) NavigateTo("home");
+        // on a maintenance tab whose brand is no longer the printer's: follow the printer to its own maintenance tab (Home when it has none)
+        if (Nav.SelectedItem is NavigationViewItem { Visibility: Visibility.Collapsed, Tag: "maintenance" or "hpmaintenance" or "canonmaintenance" or "brothermaintenance" })
+            NavigateTo(epson ? "maintenance" : hp ? "hpmaintenance" : canon ? "canonmaintenance" : brother ? "brothermaintenance" : "home");
 
         BusyRing.IsActive = s.Discovering || s.Connecting;
         if (s.Current is null) { StateDot.Fill = new SolidColorBrush(Colors.Gray); if (s.Devices.Count > 0 || s.Discovering) StateText.Text = s.Discovering ? "Searching for printers…" : "Choose a printer"; return; }

@@ -12,8 +12,8 @@ public sealed partial class CanonMaintenancePage : Page
 
     public CanonMaintenancePage() => InitializeComponent();
 
-    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; Update(); }
-    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; }
+    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; App.State.DevicesChanged += OnChanged; Update(); }
+    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.DevicesChanged -= OnChanged; }
     void OnChanged() => DispatcherQueue.TryEnqueue(Update);
 
     void Update()

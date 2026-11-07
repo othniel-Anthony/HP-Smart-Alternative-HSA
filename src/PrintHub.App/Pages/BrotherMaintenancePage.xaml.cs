@@ -16,9 +16,13 @@ public sealed partial class BrotherMaintenancePage : Page
 
     public BrotherMaintenancePage() => InitializeComponent();
 
-    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; Update(); _ = LoadReportAsync(); }
-    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; }
-    void OnChanged() => DispatcherQueue.TryEnqueue(() => { Update(); _ = LoadReportAsync(); });
+    string? _sig;
+    /// <summary>The device list changed (a printer unplugged, plugged in again, or a new one): start again when the printer in use or its connection is not what this tab showed, else look again.</summary>
+    void OnDevices() => DispatcherQueue.TryEnqueue(() => { if (Ui.ConnectionSignature() != _sig) OnChanged(); else Update(); });
+
+    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; App.State.DevicesChanged += OnDevices; _sig = Ui.ConnectionSignature(); Update(); _ = LoadReportAsync(); }
+    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.DevicesChanged -= OnDevices; }
+    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _sig = Ui.ConnectionSignature(); Update(); _ = LoadReportAsync(); });
 
     void Update()
     {

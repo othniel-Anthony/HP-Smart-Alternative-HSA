@@ -18,12 +18,15 @@ public sealed partial class HpMaintenancePage : Page
 
     void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        App.State.CurrentChanged += OnChanged; App.State.StatusChanged += OnStatus;
+        App.State.CurrentChanged += OnChanged; App.State.StatusChanged += OnStatus; App.State.DevicesChanged += OnDevices; _sig = Ui.ConnectionSignature();
         _ = ProbeAsync();
     }
 
-    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.StatusChanged -= OnStatus; }
-    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _info = null; _wireless = null; Update(); _ = ProbeAsync(); });
+    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.StatusChanged -= OnStatus; App.State.DevicesChanged -= OnDevices; }
+    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _sig = Ui.ConnectionSignature(); _info = null; _wireless = null; Update(); _ = ProbeAsync(); });
+    string? _sig;
+    /// <summary>The device list changed (a printer unplugged, plugged in again, or a new one): start again when the printer in use or its connection is not what this tab showed, else look again.</summary>
+    void OnDevices() => DispatcherQueue.TryEnqueue(() => { if (Ui.ConnectionSignature() != _sig) OnChanged(); else Update(); });
     void OnStatus() => DispatcherQueue.TryEnqueue(ShowSupplies);
 
     async Task ProbeAsync()

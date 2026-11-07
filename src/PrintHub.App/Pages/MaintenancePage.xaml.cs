@@ -15,9 +15,13 @@ public sealed partial class MaintenancePage : Page
 
     public MaintenancePage() => InitializeComponent();
 
-    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; LoadDatabase(); Update(); }
-    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; }
-    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _analysis = null; CountersPanel.Children.Clear(); CountersNote.Text = ""; Update(); });
+    void Page_Loaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged += OnChanged; App.State.DevicesChanged += OnDevices; _sig = Ui.ConnectionSignature(); LoadDatabase(); Update(); }
+    void Page_Unloaded(object sender, RoutedEventArgs e) { App.State.CurrentChanged -= OnChanged; App.State.DevicesChanged -= OnDevices; }
+    void OnChanged() => DispatcherQueue.TryEnqueue(() => { _sig = Ui.ConnectionSignature(); _analysis = null; CountersPanel.Children.Clear(); CountersNote.Text = ""; Update(); });
+
+    string? _sig;
+    /// <summary>The device list changed (a printer unplugged, plugged in again, or a new one): start again when the printer in use or its connection is not what this tab showed, else look again.</summary>
+    void OnDevices() => DispatcherQueue.TryEnqueue(() => { if (Ui.ConnectionSignature() != _sig) OnChanged(); else Update(); });
 
     void LoadDatabase() => _db = EpsonCounterService.TryLoadDatabase(out _dbError);
 

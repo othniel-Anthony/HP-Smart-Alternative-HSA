@@ -77,6 +77,16 @@ public static class Ui
         return await d.ShowAsync() == ContentDialogResult.Primary;
     }
 
+    /// <summary>
+    /// What identifies the printer in use and how HSA reaches it right now. A maintenance tab compares it with the one it last showed: when it differs (a printer was unplugged
+    /// and plugged in again, a new one appeared, the connection was reopened) the tab starts again from what the printer says now.
+    /// </summary>
+    public static string ConnectionSignature()
+    {
+        var s = App.State;
+        return $"{s.Current?.Id}|{s.Current?.Connection}|{s.Current?.OnUsb}|{(s.Session is null ? "none" : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(s.Session).ToString())}|{s.Session?.ViaUsb}";
+    }
+
     public sealed record ChecklistItem(string Key, string Label, bool Ticked);
 
     /// <summary>
