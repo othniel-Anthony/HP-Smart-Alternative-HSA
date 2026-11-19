@@ -52,19 +52,60 @@ public sealed class PrinterDevice
     /// <summary>
     /// Where the printer's own web page is on the network, or null when the printer is not on a network. A printer that is on the network is always opened at this address,
     /// never through the private USB bridge (127.0.0.1) that HSA uses to reach a USB printer: the bridge only works on this PC while HSA runs, the network address works anywhere.
-    /// The page address the printer announced is used first, then its address, then the host of its IPP or eSCL address.
+    /// The address is the printer's IP address, not a host name (names such as EPSON1234.local depend on name lookup that may not work on every network): the IP is taken from its
+    /// address or from its IPP / eSCL address. The page the printer announced keeps its scheme, port and path (Web Config is https); only its host becomes the IP. When no IP is known
+    /// the host name is used; <see cref="ResolveNetworkWebUriAsync"/> turns it into an IP when the name can be looked up.
     /// </summary>
     public Uri? NetworkWebUri
     {
         get
         {
             if (!HasNetwork) return null;
-            if (WebUri is { } w && !IsLoopback(w)) return w;
-            if (Address is { Length: > 0 } a && Uri.TryCreate($"http://{a}/", UriKind.Absolute, out var fromAddress) && !IsLoopback(fromAddress)) return fromAddress;
+            string? ip = NetworkIp();
+            if (WebUri is { } w && !IsLoopback(w)) return ip is null || IsIp(w.Host) ? w : new UriBuilder(w) { Host = ip }.Uri;
+            if (Address is { Length: > 0 } a && Uri.TryCreate($"http://{a}/", UriKind.Absolute, out var fromAddress) && !IsLoopback(fromAddress))
+                return ip is null || IsIp(fromAddress.Host) ? fromAddress : new UriBuilder(fromAddress) { Host = ip }.Uri;
             foreach (var u in new[] { IppUri, EsclUri })
-                if (u is not null && !IsLoopback(u)) return new Uri($"http://{u.Host}/");
+                if (u is not null && !IsLoopback(u)) return new Uri($"http://{ip ?? u.Host}/");
             return null;
         }
+    }
+
+    static bool IsIp(string host) => System.Net.IPAddress.TryParse(host.Trim('[', ']'), out _);
+
+    /// <summary>The first IP address (not loopback) among the printer's address and its IPP and eSCL addresses, or null when they are all host names.</summary>
+    string? NetworkIp()
+    {
+        var hosts = new List<string>();
+        if (Address is { Length: > 0 } a && Uri.TryCreate($"http://{a}/", UriKind.Absolute, out var au)) hosts.Add(au.Host);
+        if (IppUri is not null) hosts.Add(IppUri.Host);
+        if (EsclUri is not null) hosts.Add(EsclUri.Host);
+        foreach (var h in hosts)
+            if (System.Net.IPAddress.TryParse(h.Trim('[', ']'), out var ip) && !System.Net.IPAddress.IsLoopback(ip)) return h;
+        return null;
+    }
+
+    /// <summary>
+    /// <see cref="NetworkWebUri"/> with a host name looked up and replaced by its IP address (IPv4 first), when no IP address is known. The name is kept when the lookup fails or
+    /// takes more than three seconds. <paramref name="resolver"/> replaces the name lookup in tests.
+    /// </summary>
+    public async Task<Uri?> ResolveNetworkWebUriAsync(Func<string, Task<System.Net.IPAddress?>>? resolver = null)
+    {
+        var uri = NetworkWebUri;
+        if (uri is null || IsIp(uri.Host)) return uri;
+        try
+        {
+            resolver ??= async name =>
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                var all = await System.Net.Dns.GetHostAddressesAsync(name, cts.Token).ConfigureAwait(false);
+                return all.FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(x))
+                    ?? all.FirstOrDefault(x => !System.Net.IPAddress.IsLoopback(x));
+            };
+            var ip = await resolver(uri.Host).ConfigureAwait(false);
+            return ip is null ? uri : new UriBuilder(uri) { Host = ip.ToString() }.Uri;
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or OperationCanceledException or ArgumentException) { return uri; }
     }
 
     static bool IsLoopback(Uri u) => u.IsLoopback;

@@ -257,9 +257,10 @@ public static class EpsonMaintenance
         public TimeSpan MinBeforeEndPage { get; init; } = TimeSpan.FromSeconds(8);
         public TimeSpan ErrorGrace { get; init; } = TimeSpan.FromSeconds(15);
         /// <summary>
-        /// A nozzle check is ended (sheet pushed out) after the printer has said "waiting" (03) this long without ever going idle (04). An Epson L5590 answers 03 for
-        /// minutes after the pattern is drawn and goes idle only once the page is ended, so waiting for 04 left the sheet half out until the three-minute limit.
-        /// An L3250 says 03 for about 30 s while it draws the pattern and then 04.
+        /// A nozzle check is ended (sheet pushed out) after the printer has said "busy or waiting" (any status but idle 04 and error 00) this long without ever going idle. An Epson
+        /// L5590 answers 03 for minutes after the pattern is drawn and goes idle only once the page is ended, so waiting for 04 left the sheet half out until the three-minute limit;
+        /// a model that does the same with another code (a newer Epson reported to stop half way, not tried) is covered the same way. An L3250 says 03 for about 30 s while it
+        /// draws the pattern and then 04.
         /// </summary>
         public TimeSpan WaitingPlateau { get; init; } = TimeSpan.FromSeconds(45);
         /// <summary>
@@ -316,10 +317,10 @@ public static class EpsonMaintenance
                 if (code is not null and not "03" and not "04" and not "00") sawWorkCode = true;      // 01, 02, 07...: the printer is doing something
                 bool idle = code == "04" || (!endPage && sawWorkCode && waitingPolls >= WaitingPollsAfterWork);
                 if (code != "04") sawBusy = true; // no answer at all usually means it is too busy printing to talk
-                waitingSince = code == "03" ? waitingSince ?? DateTime.UtcNow : null;
+                waitingSince = code is not null and not "04" and not "00" ? waitingSince ?? DateTime.UtcNow : null;
                 if (endPage && waitingSince is { } ws && DateTime.UtcNow - ws >= WaitingPlateau && DateTime.UtcNow - started >= MinBeforeEndPage)
                 {
-                    Diag.Log($"Epson: the printer has said \"waiting\" for {(DateTime.UtcNow - ws).TotalSeconds:0} s and not gone idle; ending the page now");
+                    Diag.Log($"Epson: the printer has said status {code} (busy or waiting) for {(DateTime.UtcNow - ws).TotalSeconds:0} s and not gone idle; ending the page now");
                     break;
                 }
 

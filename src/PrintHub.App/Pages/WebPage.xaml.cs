@@ -33,7 +33,7 @@ public sealed partial class WebPage : Page
     {
         var s = App.State;
         // a printer that is on the network is opened at its network address only; the USB bridge is for printers that have no network address
-        var network = s.Current?.NetworkWebUri;
+        var network = s.Current is { } cur ? await cur.ResolveNetworkWebUriAsync() : null;
         _viaUsbBridge = network is null && s.Session?.ViaUsb == true;
         _target = network ?? s.Session?.WebUri ?? s.Current?.WebUri;
         Notice.IsOpen = false;
